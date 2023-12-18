@@ -9,7 +9,7 @@ This work is *in progress* and definetly **not production ready**.
 
 Our code uses pretrained weights, either on ImageNet (coming from the great [timm library](https://timm.fast.ai/)) or from the Retinal Foundation Model [RETFound](https://github.com/rmaphoh/RETFound_MAE/tree/main). Please cite them accordingly if you use this code.
 
-This repository adapts these models to fit in the pytorch-lightning and weights and biases framework for ease of experimentation.
+This repository adapts these models to fit in the [pytorch-lightning](https://lightning.ai/) and [Weights and Biases](https://wandb.ai/) framework for ease of experimentation.
 
 ## Dynamic Tokens Resampling
 
