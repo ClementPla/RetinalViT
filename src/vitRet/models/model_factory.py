@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from vitRet.models.stochastic_attention import StochasticVisionTransformer
+from vitRet.models.stochastic_attention.stochastic_vit import StochasticVisionTransformer
 
 
 def load_weights_from_timm(timm_model: nn.Module, model: nn.Module):
@@ -118,9 +118,8 @@ def svt_16_large(num_classes: int, *args, pretrained=True, **kwargs):
 
 def svt_retfound(num_classes: int, *args, pretrained=True, **kwargs):
     from timm.models.layers import trunc_normal_
-
     model = StochasticVisionTransformer(
-        num_classes=1,
+        num_classes=num_classes,
         embed_dim=1024,
         depth=24,
         num_heads=16,
