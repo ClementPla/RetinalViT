@@ -33,6 +33,12 @@ train
 
 You will need to adjust the path to the data (EyePACS and APTOS dataset) in the file [config file](configs/config.yaml)
 
-To finetune the RetFound, you will also need to download [their weights](https://drive.google.com/file/d/1l62zbWUFTlp214SvK6eMwPQZAzcwoeBE/view?usp=sharing)
+To finetune the RetFound, you will also need to download [their weights](https://drive.google.com/file/d/1l62zbWUFTlp214SvK6eMwPQZAzcwoeBE/view?usp=sharing).
 
-You will need to copy the weights in 
+
+You will need to copy the weights in folder:
+```
+cd RetinalViT
+mkdir pretrained_weights
+mv your_location_to_retfoundWeights pretrained_weights/RETfound_cfp_weights.pth
+```
