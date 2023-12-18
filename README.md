@@ -13,7 +13,7 @@ This repository adapts these models to fit in the [pytorch-lightning](https://li
 
 ## Dynamic Tokens Resampling
 
-We explore the dynamic resampling of the tokens sequence within the Transformer. The idea is to proceed with multiple forward passes at progressively increasing resolutions. At each *scale*, we resample the sequence to only keep the most relevant tokens based on the Attention activations of the previous scales. The **max_tokens** argument in the [config file](configs/config.yaml) indicates the maximum length of the sequence.
+We explore the dynamic resampling of the tokens sequence within the Transformer. The idea is to proceed with multiple forward passes at progressively increasing resolutions. At each *scale*, we resample the sequence to only keep the most relevant tokens based on the Attention activations of the previous scales. The **max_tokens** argument in the [config file](configs/config.yaml) indicates the maximum length of each sequence.
 
 This idea is heavily inspired of our [Focused Attention](https://www.sciencedirect.com/science/article/pii/S1361841522002377) paper, but adapted for training. We can track the selected tokens over the differents scales to get some insights on what the model is using in the input image to predict the disease.
 
