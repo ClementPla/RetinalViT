@@ -18,7 +18,8 @@ dependencies = [
     "attrs",
     "timm",
     "wandb",
-    "torchmetrics"
+    "torchmetrics",
+    "torch_scatter"
 ]
 readme = "README.md"
 

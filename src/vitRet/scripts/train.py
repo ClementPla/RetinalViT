@@ -46,7 +46,6 @@ def train():
             # EarlyStopping(monitor="val_loss", patience=10),
             LearningRateMonitor(),
         ],
-        strategy="ddp_find_unused_parameters_false",
     )
     trainer.fit(model, datamodule=eyepacs_datamodule)
     trainer.test(model, datamodule=eyepacs_datamodule, ckpt_path="best")

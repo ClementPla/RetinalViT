@@ -1,40 +1,42 @@
+import logging
+
 import timm
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from timm.models.vision_transformer import VisionTransformer
 
 from vitRet.models.stochastic_attention.stochastic_vit import StochasticVisionTransformer
 
 
-def load_weights_from_timm(timm_model: nn.Module, model: nn.Module):
+def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisionTransformer):
     for i, block in enumerate(timm_model.blocks):
-        keys = model.blocks.blocks[i].load_state_dict(block.state_dict(), strict=False)
+        _ = model.scale_modules.blocks[i].load_state_dict(block.state_dict(), strict=False)
 
     msg = model.projector.load_state_dict(timm_model.patch_embed.state_dict(), strict=False)
-    print(f"For projector, missing keys: {msg.missing_keys}, unexpected keys: {msg.unexpected_keys}")
+    logging.debug(f"For projector, missing keys: {msg.missing_keys}, unexpected keys: {msg.unexpected_keys}")
+    
     model.fc_norm.load_state_dict(timm_model.fc_norm.state_dict(), strict=False)
     try:
         model.head.load_state_dict(timm_model.head.state_dict(), strict=False)
     except RuntimeError:
-        print("Not loading head, incompatible shapes")
+        logging.warn("Not loading head, incompatible shapes")
 
     current_pos_embed = model.projector.pos_embed
     _, _, N1, _ = current_pos_embed.shape
     pos_embed = timm_model.pos_embed
-    cls_token = timm_model.cls_token
-
-    _, N2, C = pos_embed.shape
-
-    cls_pos_embed = pos_embed[:, 0]
+    if not model.global_pool:
+        cls_token = timm_model.cls_token
+        cls_pos_embed = pos_embed[:, 0]
+        model.tokenizer.load_cls_pos_embed(cls_pos_embed)
+        model.tokenizer.load_cls_token(cls_token)
+    
     pos_embed = pos_embed[:, 1:]
+    _, N2, C = pos_embed.shape
     pos_embed = pos_embed.permute(0, 2, 1).view(1, C, int(N2**0.5), int(N2**0.5))
-
+    
     model.projector.pos_embed = torch.nn.Parameter(
         F.interpolate(pos_embed, size=(N1, N1), mode="bilinear", align_corners=False)
     )
-    model.tokenizer.load_cls_pos_embed(cls_token)
-    model.tokenizer.load_cls_token(cls_pos_embed)
-
     return model
 
 
@@ -118,6 +120,7 @@ def svt_16_large(num_classes: int, *args, pretrained=True, **kwargs):
 
 def svt_retfound(num_classes: int, *args, pretrained=True, **kwargs):
     from timm.models.layers import trunc_normal_
+
     model = StochasticVisionTransformer(
         num_classes=num_classes,
         embed_dim=1024,
@@ -129,12 +132,29 @@ def svt_retfound(num_classes: int, *args, pretrained=True, **kwargs):
         *args,
         **kwargs,
     )
-    timm_model = timm.create_model("vit_large_patch16_224", pretrained=True, num_classes=1)
+    global_pool = kwargs.get("global_pool", False)
+    if global_pool:
+        timm_model = timm.create_model(
+            "vit_large_patch16_224", pretrained=False, num_classes=num_classes, class_token=False, global_pool="avg"
+        )
+    else:
+        timm_model = timm.create_model("vit_large_patch16_224", pretrained=True, num_classes=num_classes)
+
     if pretrained:
         path = "pretrained_weights/RETFound_cfp_weights.pth"
         checkpoint = torch.load(path, map_location="cpu")
+        for key in list(checkpoint["model"].keys()):
+            if "decoder" in key:
+                del checkpoint["model"][key]
+                
+        if global_pool:
+            """
+            RetFOUND builds a cls token but discards it at inference time. We just remove it from the checkpoint 
+            (including associated positional embedding)
+            """
+            checkpoint['model']['pos_embed'] = checkpoint['model']['pos_embed'][:, 1:]
         msg = timm_model.load_state_dict(checkpoint["model"], strict=False)
-        print(msg.missing_keys)
+        print(f"Loading RetFound in timm model: missing keys {msg.missing_keys}, unexpected_keys {msg.unexpected_keys}")
     model = load_weights_from_timm(timm_model, model)
     trunc_normal_(model.head.weight, std=2e-5)
 
@@ -163,8 +183,6 @@ def create_model(arch: str, num_classes=1000, *args, **kwargs):
 
 
 if __name__ == "__main__":
-    import torch
-
     model = create_model(
         "svt_retfound",
         num_classes=1000,

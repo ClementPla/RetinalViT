@@ -1,5 +1,5 @@
 
-define: &img_shape [1024, 1024]
+define: &img_shape [512, 512]
 
 logger:
   project: StochasticAttention-DiabeticRetinopathy
@@ -7,7 +7,7 @@ logger:
 data:
   data_dir: /home/tmp/clpla/data/eyepacs/
   img_size: *img_shape
-  batch_size: 8
+  batch_size: 12
   valid_size: 500
   num_workers: auto
 
@@ -15,18 +15,20 @@ model:
   arch: svt_retfound
   img_size: *img_shape
   num_classes: 5
-  max_tokens: 164
-  scales: 6
-  projection_stride: 4
+  max_tokens: 384
+  scales: 1
+  projection_stride: 16
   pretrained: True
   drop_path: 0.2
+  global_pool: False
+  single_cls_token: False
 
-  
 training:
   lr: 0.0003
   layer_decay: 0.65
   pct_start: 0.25
-  optimizer:t
+  as_regression: True
+  optimizer:
     betas: [.9, .999]
     weight_decay: 0.05
   mixup:
@@ -39,8 +41,6 @@ training:
     label_smoothing: 0.1
     num_classes: 5
 
-
-
 # data:
 #   csv_file: /usagers/clpla/data/imageNet/val_solution.csv
 #   data_dir: /home/tmp/clpla/data/imagenet/ILSVRC/Data/CLS-LOC/
@@ -52,13 +52,13 @@ training:
 
 
 trainer:
-  accumulate_grad_batches: 8
+  accumulate_grad_batches: 4
   accelerator: gpu
   deterministic: False
   devices: auto
   max_epochs: 100
-  precision: 16
+  precision: 16-mixed
   gradient_clip_val: 1.0
-  check_val_every_n_epoch: 2
+  check_val_every_n_epoch: 1
   num_sanity_val_steps: 2
   fast_dev_run: False

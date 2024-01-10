@@ -1,24 +1,20 @@
+import os
+
+import albumentations as A
+import cv2
+from albumentations.pytorch import ToTensorV2
 from nntools.dataset import (
     ClassificationDataset,
-    random_split,
     Composition,
     nntools_wrapper,
+    random_split,
 )
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import DataLoader
-from timm.data.constants import IMAGENET_INCEPTION_STD, IMAGENET_INCEPTION_MEAN
-import os
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-import cv2
 from timm.data import (
     IMAGENET_DEFAULT_MEAN,
     IMAGENET_DEFAULT_STD,
-    IMAGENET_INCEPTION_MEAN,
-    IMAGENET_INCEPTION_STD,
-    OPENAI_CLIP_MEAN,
-    OPENAI_CLIP_STD,
 )
+from torch.utils.data import DataLoader
 
 
 @nntools_wrapper
@@ -48,10 +44,7 @@ class ImageNetDataModule(LightningDataModule):
 
         with open(synset_mapping) as f:
             lines = f.readlines()
-        self.labels = {
-            f.split(" ")[0]: (", ".join(f.split(" ")[1:]).replace("\n", ""))
-            for f in lines
-        }
+        self.labels = {f.split(" ")[0]: (", ".join(f.split(" ")[1:]).replace("\n", "")) for f in lines}
         self.num_workers = num_workers
 
     def setup(self, stage: str) -> None:
@@ -87,7 +80,7 @@ class ImageNetDataModule(LightningDataModule):
                 keep_size_ratio=True,
                 file_column="ImageId",
                 gt_column="GtClassif",
-                csv_filepath=self.csv_file,
+                label_filepath=self.csv_file,
             )
             self.test.remap("GtClassif", "label")
             self.test.composer = Composition()
@@ -145,16 +138,17 @@ class ImageNetDataModule(LightningDataModule):
             pin_memory=True,
         )
 
-    def test_dataloader(self):
+    def test_dataloader(self, shuffle=False):
         return DataLoader(
             self.test,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
+            shuffle=shuffle,
         )
 
     def human_readable_label(self, i: int):
-        return self.labels[self.train.map_class[int(i)]]
+        return self.labels[self.train.map_class['label'][int(i)]]
 
     def human_readable_labels(self, labels):
         return [self.human_readable_label(label) for label in labels]
