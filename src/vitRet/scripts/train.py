@@ -13,7 +13,7 @@ from vitRet.data.fundus import EyePACSDataModule
 from vitRet.my_lightning_module import LogValidationAttentionMap, TrainerModule
 
 torch.set_float32_matmul_precision("medium")
-
+torch.autograd.set_detect_anomaly(True)
 
 
 def train():

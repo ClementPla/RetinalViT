@@ -11,9 +11,11 @@ from vitRet.models.stochastic_attention.stochastic_vit import StochasticVisionTr
 def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisionTransformer):
     for i, block in enumerate(timm_model.blocks):
         _ = model.scale_modules.blocks[i].load_state_dict(block.state_dict(), strict=False)
-
-    msg = model.projector.load_state_dict(timm_model.patch_embed.state_dict(), strict=False)
-    logging.debug(f"For projector, missing keys: {msg.missing_keys}, unexpected keys: {msg.unexpected_keys}")
+    try:
+        msg = model.projector.load_state_dict(timm_model.patch_embed.state_dict(), strict=False)
+        logging.debug(f"For projector, missing keys: {msg.missing_keys}, unexpected keys: {msg.unexpected_keys}")
+    except RuntimeError as e:
+        pass
     
     model.fc_norm.load_state_dict(timm_model.fc_norm.state_dict(), strict=False)
     try:
@@ -21,22 +23,23 @@ def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisio
     except RuntimeError:
         logging.warn("Not loading head, incompatible shapes")
 
-    current_pos_embed = model.projector.pos_embed
-    _, _, N1, _ = current_pos_embed.shape
-    pos_embed = timm_model.pos_embed
-    if not model.global_pool:
-        cls_token = timm_model.cls_token
-        cls_pos_embed = pos_embed[:, 0]
-        model.tokenizer.load_cls_pos_embed(cls_pos_embed)
-        model.tokenizer.load_cls_token(cls_token)
-    
-    pos_embed = pos_embed[:, 1:]
-    _, N2, C = pos_embed.shape
-    pos_embed = pos_embed.permute(0, 2, 1).view(1, C, int(N2**0.5), int(N2**0.5))
-    
-    model.projector.pos_embed = torch.nn.Parameter(
-        F.interpolate(pos_embed, size=(N1, N1), mode="bilinear", align_corners=False)
-    )
+    if model.projector.pos_embed.shape[1] == timm_model.pos_embed.shape[2]:
+        current_pos_embed = model.projector.pos_embed
+        _, _, N1, _ = current_pos_embed.shape
+        pos_embed = timm_model.pos_embed
+        if not model.global_pool:
+            cls_token = timm_model.cls_token
+            cls_pos_embed = pos_embed[:, 0]
+            model.tokenizer.load_cls_pos_embed(cls_pos_embed)
+            model.tokenizer.load_cls_token(cls_token)
+        
+        pos_embed = pos_embed[:, 1:]
+        _, N2, C = pos_embed.shape
+        pos_embed = pos_embed.permute(0, 2, 1).view(1, C, int(N2**0.5), int(N2**0.5))
+        
+        model.projector.pos_embed = torch.nn.Parameter(
+            F.interpolate(pos_embed, size=(N1, N1), mode="bilinear", align_corners=False)
+        )
     return model
 
 

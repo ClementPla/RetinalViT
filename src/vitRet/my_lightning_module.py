@@ -70,11 +70,12 @@ class TrainerModule(pytorch_lightning.LightningModule):
 
     def training_step(self, data, batch_index) -> STEP_OUTPUT:
         image = data["image"]
+        segments = data['segments']
         gt = data["label"]
         if self.mixup is not None:
             image, gt = self.mixup(image, gt)
 
-        logits = self.model(image, return_attention=False)
+        logits = self.model(image, segments, return_attention=False)
         loss = self.get_loss(logits, gt)
         self.log("train_loss", loss, on_epoch=True, on_step=True, sync_dist=True, prog_bar=True)
         return loss
@@ -93,8 +94,9 @@ class TrainerModule(pytorch_lightning.LightningModule):
 
     def validation_step(self, data, batch_index) -> STEP_OUTPUT:
         image = data["image"]
+        segments = data['segments']
         gt = data["label"]
-        logits, attn = self.model(image, return_attention=True)
+        logits, attn = self.model(image, segments, return_attention=True)
         loss = self.get_loss(logits, gt)
         pred = self.get_pred(logits)
         attn = spatial_batch_normalization(attn)
@@ -105,20 +107,20 @@ class TrainerModule(pytorch_lightning.LightningModule):
 
     def test_step(self, data, batch_index) -> STEP_OUTPUT:
         image = data["image"]
+        segments = data['segments']
         gt = data["label"]
-        logits = self.model(image, return_attention=False)
+        logits = self.model(image, segments, return_attention=False)
         pred = self.get_pred(logits)
         self.test_metrics.update(pred, gt)
         self.log_dict(self.test_metrics, on_epoch=True, on_step=False, sync_dist=True)
 
-    def configure_optimizers(self) -> Any:
+    def configure_optimizers_old(self) -> Any:
         param_groups = lrd.param_groups_lrd(
             self.model,
             self.training_config["optimizer"]["weight_decay"],
             no_weight_decay_list=self.model.no_weight_decay,
             layer_decay=self.training_config.get("layer_decay", 0.0),
         )
-
         optimizer = torch.optim.AdamW(param_groups, lr=self.training_config["lr"], **self.training_config["optimizer"])
         return [optimizer], [
             {
@@ -129,6 +131,20 @@ class TrainerModule(pytorch_lightning.LightningModule):
                     pct_start=self.training_config["pct_start"],
                 ),
                 "interval": "step",
+            }
+        ]
+    def configure_optimizers(self) -> Any:
+        params = self.model.parameters()
+
+        optimizer = torch.optim.AdamW(params, lr=self.training_config["lr"], **self.training_config["optimizer"])
+        return [optimizer], [
+            {
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
+                                                                        factor=0.1,
+                                                                        mode='min'),
+                "monitor" : 'val_loss',
+                "interval": "epoch",
+                "frequency": 1,
             }
         ]
 

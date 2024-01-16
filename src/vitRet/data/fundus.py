@@ -1,16 +1,16 @@
 import os
+from typing import List
 
 import albumentations as A
 import cv2
 import numpy as np
 import torch
-from albumentations.pytorch.transforms import ToTensorV2
 from nntools.dataset import ClassificationDataset, Composition, nntools_wrapper, random_split
 from nntools.dataset.utils import class_weighting
-from pytorch_lightning import LightningDataModule
 from sklearn.model_selection import StratifiedKFold
-from timm.data.constants import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 from torch.utils.data import DataLoader
+
+from vitRet.data.base import BaseDataModule
 
 
 def filter_name(name: str):
@@ -36,20 +36,32 @@ def fundus_autocrop(image: np.ndarray):
     }
 
 
-class FundusDataModule(LightningDataModule):
-    def __init__(self, data_dir, img_size=(512, 512), valid_size=0.1, batch_size=64, num_workers=32, use_cache=False):
-        super(FundusDataModule, self).__init__()
-        self.img_size = img_size
+class FundusDataModule(BaseDataModule):
+    def __init__(
+        self,
+        data_dir,
+        img_size=(512, 512),
+        valid_size=0.1,
+        batch_size=64,
+        num_workers=32,
+        use_cache=False,
+        use_superpixels=True,
+        superpixels_scales=4,
+        superpixels_max_nb=2048,
+        superpixels_min_nb=32,
+    ):
+        super(FundusDataModule, self).__init__(
+            img_size,
+            valid_size,
+            batch_size,
+            num_workers,
+            use_cache,
+            use_superpixels,
+            superpixels_scales,
+            superpixels_max_nb,
+            superpixels_min_nb=superpixels_min_nb,
+        )
         self.root_img = data_dir
-        self.valid_size = valid_size
-        self.batch_size = batch_size
-        self.train = self.val = self.test = None
-        if num_workers == "auto":
-            self.num_workers = os.cpu_count() // torch.cuda.device_count()
-        else:
-            self.num_workers = num_workers
-        self.use_cache = use_cache
-        self.persistent_workers = True
 
     def setup(self, stage: str):
         test_composer = Composition()
@@ -70,47 +82,7 @@ class FundusDataModule(LightningDataModule):
     def weights(self):
         return torch.Tensor(class_weighting(self.train.get_class_count()))
 
-    def img_size_ops(self):
-        return [
-            A.LongestMaxSize(max_size=max(self.img_size), always_apply=True),
-            A.PadIfNeeded(
-                min_height=self.img_size[0],
-                min_width=self.img_size[1],
-                always_apply=True,
-                border_mode=cv2.BORDER_CONSTANT,
-            ),
-        ]
-
-    def normalize_and_cast_op(self):
-        return [
-            A.Compose(
-                [
-                    A.Normalize(mean=IMAGENET_INCEPTION_MEAN, std=IMAGENET_INCEPTION_STD, always_apply=True),
-                    ToTensorV2(always_apply=True),
-                ]
-            )
-        ]
-    
-    @property
-    def superpixels_decomposition(self):
-        from skimage.segmentation import slic
-        @nntools_wrapper
-        def get_superpixels(image):
-            max_superpixels = self.max_segments
-            scales = self.scales
-            output = {'image':image}
-            for scale in range(scales):
-                i = scales-scale
-                current_scale_segments = max_superpixels // 2**(scale)
-                segments = slic(image, n_segments=current_scale_segments, sigma=0, start_label=0)
-                segments[segments>current_scale_segments] = current_scale_segments
-                output[f'scale_{i}'] = segments
-            return output
-        
-        return get_superpixels
-                    
-
-    def data_aug_ops(self):
+    def data_aug_ops(self) -> List[A.Compose]:
         return [
             A.Compose(
                 [

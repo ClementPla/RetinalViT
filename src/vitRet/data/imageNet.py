@@ -2,6 +2,7 @@ import os
 
 import albumentations as A
 import cv2
+import numpy as np
 from albumentations.pytorch import ToTensorV2
 from nntools.dataset import (
     ClassificationDataset,
@@ -9,12 +10,9 @@ from nntools.dataset import (
     nntools_wrapper,
     random_split,
 )
-from pytorch_lightning import LightningDataModule
-from timm.data import (
-    IMAGENET_DEFAULT_MEAN,
-    IMAGENET_DEFAULT_STD,
-)
 from torch.utils.data import DataLoader
+
+from vitRet.data.base import BaseDataModule
 
 
 @nntools_wrapper
@@ -23,7 +21,7 @@ def debugger(image, label):
     return {"image": image, "label": label}
 
 
-class ImageNetDataModule(LightningDataModule):
+class ImageNetDataModule(BaseDataModule):
     def __init__(
         self,
         data_dir,
@@ -33,19 +31,27 @@ class ImageNetDataModule(LightningDataModule):
         valid_size=0.1,
         batch_size=64,
         num_workers=32,
-    ):
-        super(ImageNetDataModule, self).__init__()
-        self.img_size = img_size
+        use_cache=False,
+        use_superpixels=True,
+        superpixels_scales=4,
+        superpixels_max_nb=2048):
+        
+        super(ImageNetDataModule, self).__init__(img_size,
+            valid_size,
+            batch_size,
+            num_workers,
+            use_cache,
+            use_superpixels,
+            superpixels_scales,
+            superpixels_max_nb,)
+        
         self.root_img = data_dir
         self.csv_file = csv_file
-        self.valid_size = valid_size
-        self.batch_size = batch_size
         self.train = self.val = self.test = None
 
         with open(synset_mapping) as f:
             lines = f.readlines()
         self.labels = {f.split(" ")[0]: (", ".join(f.split(" ")[1:]).replace("\n", "")) for f in lines}
-        self.num_workers = num_workers
 
     def setup(self, stage: str) -> None:
         if stage == "fit" or stage == "validate":
@@ -61,13 +67,13 @@ class ImageNetDataModule(LightningDataModule):
             self.train.composer = Composition()
             self.val.composer = Composition()
             transforms = [
-                self.img_size_ops(),
+                *self.img_size_ops(),
                 self.data_augmentation_ops(),
-                self.normalize_ops(),
+                *self.normalize_and_cast_op(),
             ]
             self.train.composer.add(*transforms)
 
-            transforms = [self.img_size_ops(), self.normalize_ops()]
+            transforms = [*self.img_size_ops(), *self.normalize_and_cast_op()]
             self.val.composer.add(*transforms)
 
             print(f"Train set: {len(self.train)}")
@@ -85,38 +91,12 @@ class ImageNetDataModule(LightningDataModule):
             self.test.remap("GtClassif", "label")
             self.test.composer = Composition()
 
-            transforms = [self.img_size_ops(), self.normalize_ops()]
+            transforms = [*self.img_size_ops(), *self.normalize_and_cast_op()]
             self.test.composer.add(*transforms)
 
     @staticmethod
     def data_augmentation_ops():
         return A.Compose([A.HorizontalFlip(p=0.5), A.ShiftScaleRotate(p=0.5)])
-
-    @staticmethod
-    def normalize_ops():
-        return A.Compose(
-            [
-                A.Normalize(
-                    always_apply=True,
-                    mean=IMAGENET_DEFAULT_MEAN,
-                    std=IMAGENET_DEFAULT_STD,
-                ),
-                ToTensorV2(),
-            ]
-        )
-
-    def img_size_ops(self):
-        return A.Compose(
-            [
-                A.LongestMaxSize(max_size=max(self.img_size), always_apply=True),
-                A.PadIfNeeded(
-                    min_height=self.img_size[0],
-                    min_width=self.img_size[1],
-                    always_apply=True,
-                    border_mode=cv2.BORDER_CONSTANT,
-                ),
-            ]
-        )
 
     def train_dataloader(self):
         return DataLoader(
