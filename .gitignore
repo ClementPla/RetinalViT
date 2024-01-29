@@ -2,6 +2,7 @@
 
 
 wandb/
+ligthning_logs/
 checkpoints/
 
 *.pth

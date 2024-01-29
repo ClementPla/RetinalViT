@@ -1,5 +1,5 @@
 
-define: &img_shape [768, 768]
+define: &img_shape [1024, 1024]
 define: &scales 1
 
 logger:
@@ -8,26 +8,30 @@ logger:
 data:
   data_dir: /home/tmp/clpla/data/eyepacs/
   img_size: *img_shape
-  batch_size: 24
+  batch_size: 16
   valid_size: 4000
-  num_workers: auto
-  superpixels_max_nb: 512
-  superpixels_min_nb: 128
+  num_workers: 8
+  superpixels_max_nb: 8192
+  superpixels_min_nb: 1024
   superpixels_scales: *scales
+  superpixels_filter_black: True
 
 model:
+  first_embedding_dim: 32
   arch: svt_16_base
   img_size: *img_shape
   num_classes: 5
-  max_tokens: 512
+  max_tokens: 4096
   scales: *scales
-  projection_stride: 1
+  projection_stride: 2
+  qkv_bias: True
   pretrained: True
   drop_path: 0.2
   global_pool: False
   single_cls_token: True
-  padding: same
-
+  padding: 0
+  detach_input: False
+  
 training:
   lr: 0.00003
   layer_decay: 0.65
@@ -62,7 +66,7 @@ trainer:
   deterministic: False
   devices: auto
   max_epochs: 100
-  precision: 32
+  precision: bf16-mixed
   gradient_clip_val: 1.0
   check_val_every_n_epoch: 1
   num_sanity_val_steps: 2

@@ -6,22 +6,40 @@ import torch.nn.functional as F
 from timm.models.vision_transformer import VisionTransformer
 
 from vitRet.models.stochastic_attention.stochastic_vit import StochasticVisionTransformer
-
+from vitRet.utils.ckpts import ProjectorCkpt
 
 def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisionTransformer):
-    for i, block in enumerate(timm_model.blocks):
-        _ = model.scale_modules.blocks[i].load_state_dict(block.state_dict(), strict=False)
+    
+    model.blocks.load_state_dict(timm_model.blocks.state_dict(), strict=True)
     try:
         msg = model.projector.load_state_dict(timm_model.patch_embed.state_dict(), strict=False)
         logging.debug(f"For projector, missing keys: {msg.missing_keys}, unexpected keys: {msg.unexpected_keys}")
     except RuntimeError as e:
         pass
-    
-    model.fc_norm.load_state_dict(timm_model.fc_norm.state_dict(), strict=False)
+
+    model.norm.load_state_dict(timm_model.norm.state_dict(), strict=True)
+    model.fc_norm.load_state_dict(timm_model.fc_norm.state_dict(), strict=True)
     try:
         model.head.load_state_dict(timm_model.head.state_dict(), strict=False)
     except RuntimeError:
         logging.warn("Not loading head, incompatible shapes")
+
+    if model.is_compressed:
+        ckpt = ProjectorCkpt.DEPTH_32
+        projector_dict = torch.load(ckpt, map_location='cpu')["state_dict"]
+        only_projector = {}
+        for k, v in projector_dict.items():
+            if k.startswith('trained_projector.'):
+                only_projector[k.replace('trained_projector.', '')] = v
+        
+        pos_embed = only_projector["projector.pos_embed"]
+        
+        only_projector["projector.pos_embed"] = F.interpolate(pos_embed, 
+                                                        size=model.projector.pos_embed.shape[-2:], 
+                                                        mode="bilinear")
+        inc_keys =  model.load_state_dict(only_projector, strict=False)
+        print(inc_keys.unexpected_keys)
+        return model
 
     if model.projector.pos_embed.shape[1] == timm_model.pos_embed.shape[2]:
         current_pos_embed = model.projector.pos_embed
@@ -29,17 +47,17 @@ def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisio
         pos_embed = timm_model.pos_embed
         if not model.global_pool:
             cls_token = timm_model.cls_token
-            cls_pos_embed = pos_embed[:, 0]
+            cls_pos_embed = pos_embed[:, :1]
             model.tokenizer.load_cls_pos_embed(cls_pos_embed)
             model.tokenizer.load_cls_token(cls_token)
-        
+
         pos_embed = pos_embed[:, 1:]
         _, N2, C = pos_embed.shape
         pos_embed = pos_embed.permute(0, 2, 1).view(1, C, int(N2**0.5), int(N2**0.5))
-        
-        model.projector.pos_embed = torch.nn.Parameter(
-            F.interpolate(pos_embed, size=(N1, N1), mode="bilinear", align_corners=False)
-        )
+
+        if N1 != int(N2**0.5):
+            pos_embed = F.interpolate(pos_embed, size=(N1, N1), mode="bilinear", align_corners=False)
+        model.projector.pos_embed = torch.nn.Parameter(pos_embed)
     return model
 
 
@@ -149,16 +167,18 @@ def svt_retfound(num_classes: int, *args, pretrained=True, **kwargs):
         for key in list(checkpoint["model"].keys()):
             if "decoder" in key:
                 del checkpoint["model"][key]
-                
+
         if global_pool:
             """
-            RetFOUND builds a cls token but discards it at inference time. We just remove it from the checkpoint 
+            RetFOUND builds a cls token but discards it at inference time. 
+            We just remove it from the checkpoint 
             (including associated positional embedding)
             """
-            checkpoint['model']['pos_embed'] = checkpoint['model']['pos_embed'][:, 1:]
+            checkpoint["model"]["pos_embed"] = checkpoint["model"]["pos_embed"][:, 1:]
         msg = timm_model.load_state_dict(checkpoint["model"], strict=False)
         print(f"Loading RetFound in timm model: missing keys {msg.missing_keys}, unexpected_keys {msg.unexpected_keys}")
-    model = load_weights_from_timm(timm_model, model)
+        model = load_weights_from_timm(timm_model, model)
+    
     trunc_normal_(model.head.weight, std=2e-5)
 
     return model

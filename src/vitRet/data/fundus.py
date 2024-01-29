@@ -49,6 +49,7 @@ class FundusDataModule(BaseDataModule):
         superpixels_scales=4,
         superpixels_max_nb=2048,
         superpixels_min_nb=32,
+        superpixels_filter_black=True,
     ):
         super(FundusDataModule, self).__init__(
             img_size,
@@ -60,6 +61,7 @@ class FundusDataModule(BaseDataModule):
             superpixels_scales,
             superpixels_max_nb,
             superpixels_min_nb=superpixels_min_nb,
+            superpixels_filter_black=superpixels_filter_black,
         )
         self.root_img = data_dir
 
@@ -110,7 +112,7 @@ class FundusDataModule(BaseDataModule):
         return DataLoader(
             self.val,
             batch_size=self.batch_size,
-            shuffle=shuffle,
+            shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=self.persistent_workers and persistent_workers,
             pin_memory=True,
@@ -147,8 +149,6 @@ class EyePACSDataModule(FundusDataModule):
             val_length = self.valid_size
             train_length = len(dataset) - val_length
             self.train, self.val = random_split(dataset, [train_length, val_length])
-            self.train.composer = None
-            self.val.composer = None
             self.train.remap("level", "label")
             self.val.remap("level", "label")
 
@@ -174,16 +174,26 @@ class EyePACSDataModule(FundusDataModule):
 
 class AptosDataModule(FundusDataModule):
     def setup(self, stage: str) -> None:
-        fold = StratifiedKFold(5, shuffle=True, random_state=2)
         dataset = ClassificationDataset(
             os.path.join(self.root_img, "train/"),
-            csv_filepath=os.path.join(self.root_img, "train.csv"),
+            label_filepath=os.path.join(self.root_img, "train.csv"),
             file_column="id_code",
             gt_column="diagnosis",
             shape=self.img_size,
             keep_size_ratio=True,
+            auto_pad=True,
         )
-
+        if stage == 'all':
+            dataset.remap("diagnosis", "label")
+            dataset.composer = Composition()
+            self.train = dataset
+            self.test = dataset
+            self.val = dataset
+            super().setup('test')
+            super().setup('test')
+            return
+        
+        fold = StratifiedKFold(5, shuffle=True, random_state=2)
         list_index = np.arange(len(dataset))
         list_labels = dataset.gts["label"]
         train_index, test_index = next(fold.split(list_index, list_labels))

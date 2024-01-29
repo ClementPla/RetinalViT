@@ -34,7 +34,9 @@ class ImageNetDataModule(BaseDataModule):
         use_cache=False,
         use_superpixels=True,
         superpixels_scales=4,
-        superpixels_max_nb=2048):
+        superpixels_max_nb=2048,
+        superpixels_min_nb=32,
+        superpixels_filter_black=False,):
         
         super(ImageNetDataModule, self).__init__(img_size,
             valid_size,
@@ -43,7 +45,9 @@ class ImageNetDataModule(BaseDataModule):
             use_cache,
             use_superpixels,
             superpixels_scales,
-            superpixels_max_nb,)
+            superpixels_max_nb,
+            superpixels_min_nb,
+            superpixels_filter_black=superpixels_filter_black)
         
         self.root_img = data_dir
         self.csv_file = csv_file

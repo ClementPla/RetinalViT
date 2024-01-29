@@ -4,6 +4,7 @@ import pytorch_lightning
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchmetrics
 from pytorch_lightning.utilities import rank_zero_only
 from pytorch_lightning.utilities.types import STEP_OUTPUT
@@ -56,6 +57,7 @@ class TrainerModule(pytorch_lightning.LightningModule):
                 ),
             }
         )
+        self.confusion_matrix = torchmetrics.ConfusionMatrix(num_classes=self.n_classes, task="multiclass")
         mixup_config = training_config.get("mixup", None)
         if mixup_config is not None and any(
             [
@@ -70,7 +72,7 @@ class TrainerModule(pytorch_lightning.LightningModule):
 
     def training_step(self, data, batch_index) -> STEP_OUTPUT:
         image = data["image"]
-        segments = data['segments']
+        segments = data["segments"]
         gt = data["label"]
         if self.mixup is not None:
             image, gt = self.mixup(image, gt)
@@ -94,7 +96,7 @@ class TrainerModule(pytorch_lightning.LightningModule):
 
     def validation_step(self, data, batch_index) -> STEP_OUTPUT:
         image = data["image"]
-        segments = data['segments']
+        segments = data["segments"]
         gt = data["label"]
         logits, attn = self.model(image, segments, return_attention=True)
         loss = self.get_loss(logits, gt)
@@ -107,13 +109,19 @@ class TrainerModule(pytorch_lightning.LightningModule):
 
     def test_step(self, data, batch_index) -> STEP_OUTPUT:
         image = data["image"]
-        segments = data['segments']
+        segments = data["segments"]
         gt = data["label"]
         logits = self.model(image, segments, return_attention=False)
         pred = self.get_pred(logits)
         self.test_metrics.update(pred, gt)
+        self.confusion_matrix.update(pred, gt)
         self.log_dict(self.test_metrics, on_epoch=True, on_step=False, sync_dist=True)
-
+        
+    def on_test_epoch_end(self) -> None:
+        confmat = self.confusion_matrix.compute()
+        self.confusion_matrix.reset()
+        print(confmat)        
+        
     def configure_optimizers_old(self) -> Any:
         param_groups = lrd.param_groups_lrd(
             self.model,
@@ -133,16 +141,26 @@ class TrainerModule(pytorch_lightning.LightningModule):
                 "interval": "step",
             }
         ]
+
     def configure_optimizers(self) -> Any:
-        params = self.model.parameters()
+        decay = []
+        no_decay = []
+        for name, param in self.model.named_parameters():
+            if name in self.model.no_weight_decay:
+                no_decay.append(param)
+            else:
+                decay.append(param)
+
+        params = [
+            {"params": decay, "weight_decay": self.training_config["optimizer"]["weight_decay"]},
+            {"params": no_decay, "weight_decay": 0.0},
+        ]
 
         optimizer = torch.optim.AdamW(params, lr=self.training_config["lr"], **self.training_config["optimizer"])
         return [optimizer], [
             {
-                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
-                                                                        factor=0.1,
-                                                                        mode='min'),
-                "monitor" : 'val_loss',
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=0.1, mode="min"),
+                "monitor": "val_loss",
                 "interval": "epoch",
                 "frequency": 1,
             }
@@ -150,11 +168,10 @@ class TrainerModule(pytorch_lightning.LightningModule):
 
 
 class LogValidationAttentionMap(pl.Callback):
-    def __init__(self, wandb_logger, n_images=4, frequency=2):
+    def __init__(self, wandb_logger, n_images=8, frequency=2):
         self.n_images = n_images
         self.wandb_logger = wandb_logger
         self.frequency = frequency
-        self.__call = 0
 
         super().__init__()
 
@@ -164,7 +181,15 @@ class LogValidationAttentionMap(pl.Callback):
             n = self.n_images
             x = batch["image"][:n].float()
             attn = outputs["attn"][:n]
-            columns = ["image", "attention_map"]
-            data = [[wandb.Image(x_i), wandb.Image(attn_i / attn_i.max())] for x_i, attn_i in list(zip(x, attn))]
+
+            mixed = x * F.interpolate(attn.unsqueeze(1), size=x.shape[-2:], mode="nearest")
+            pred = outputs["pred"][:n]
+            gt = outputs["gt"][:n]
+            columns = ["image", "attention_map", 'mixed', "prediction", "groundtruth"]
+
+            data = [
+                [wandb.Image(x_i), wandb.Image(attn_i / attn_i.max()), wandb.Image(mixed_i), p_i, gt_i]
+                for x_i, attn_i, mixed_i, p_i, gt_i in list(zip(x, attn, mixed, pred, gt))
+            ]
+
             self.wandb_logger.log_table(data=data, key="Validation First Batch", columns=columns)
-            self.__call += 1
