@@ -24,7 +24,8 @@ class BaseDataModule(LightningDataModule):
         superpixels_scales=4,
         superpixels_max_nb=2048,
         superpixels_min_nb=32,
-        superpixels_filter_black=True
+        superpixels_filter_black=True,
+        superpixels_num_threads=1
     ):
         super().__init__()
         self.img_size = img_size
@@ -57,6 +58,7 @@ class BaseDataModule(LightningDataModule):
                 min_size_factor=0,
                 manhattan_spatial_dist=False,
                 compactness=10,
+                num_threads=superpixels_num_threads,
             )
             for seg_nb in segments_nb
         ]
@@ -108,7 +110,6 @@ class BaseDataModule(LightningDataModule):
             output = {"image": image}
             image = cv2.medianBlur(image, 9)
             list_segments = [slic.iterate(image) for slic in self.slics]
-            
             segments = np.stack(list_segments, axis=-1)
             if mask is not None:
                 if self.superpixels_filter_black:

@@ -4,6 +4,7 @@ from typing import List
 import albumentations as A
 import cv2
 import numpy as np
+import pandas as pd
 import torch
 from nntools.dataset import ClassificationDataset, Composition, nntools_wrapper, random_split
 from nntools.dataset.utils import class_weighting
@@ -20,8 +21,7 @@ def filter_name(name: str):
 @nntools_wrapper
 def fundus_autocrop(image: np.ndarray):
     r_img = image[:, :, 0]
-    _, mask = cv2.threshold(r_img, 15, 1, cv2.THRESH_BINARY)
-
+    _, mask = cv2.threshold(r_img, 25, 1, cv2.THRESH_BINARY)
     not_null_pixels = cv2.findNonZero(mask)
     mask = mask.astype(np.uint8)
     if not_null_pixels is None:
@@ -50,6 +50,7 @@ class FundusDataModule(BaseDataModule):
         superpixels_max_nb=2048,
         superpixels_min_nb=32,
         superpixels_filter_black=True,
+        superpixels_num_threads=1,
     ):
         super(FundusDataModule, self).__init__(
             img_size,
@@ -62,21 +63,20 @@ class FundusDataModule(BaseDataModule):
             superpixels_max_nb,
             superpixels_min_nb=superpixels_min_nb,
             superpixels_filter_black=superpixels_filter_black,
+            superpixels_num_threads=superpixels_num_threads,
         )
         self.root_img = data_dir
 
     def setup(self, stage: str):
         test_composer = Composition()
         test_composer.add(fundus_autocrop, *self.img_size_ops(), *self.normalize_and_cast_op())
+        train_composer = Composition()
+        train_composer.add(fundus_autocrop, *self.img_size_ops(), *self.data_aug_ops(), *self.normalize_and_cast_op())
 
-        if stage == "fit" or stage == "validate":
-            train_composer = Composition()
-
-            train_composer.add(
-                fundus_autocrop, *self.img_size_ops(), *self.data_aug_ops(), *self.normalize_and_cast_op()
-            )
-            self.val.composer = test_composer
+        if stage == "fit":
             self.train.composer = train_composer
+        elif stage == "validate":
+            self.val.composer = test_composer
         elif stage == "test":
             self.test.composer = test_composer
 
@@ -91,8 +91,8 @@ class FundusDataModule(BaseDataModule):
                     A.RandomBrightnessContrast(p=0.5),
                     A.HorizontalFlip(p=0.5),
                     A.VerticalFlip(p=0.25),
-                    A.ShiftScaleRotate(border_mode=cv2.BORDER_CONSTANT),
-                    A.HueSaturationValue(),
+                    A.ShiftScaleRotate(border_mode=cv2.BORDER_CONSTANT, scale_limit=0, rotate_limit=10, p=0.25),
+                    A.HueSaturationValue(val_shift_limit=10, hue_shift_limit=10, sat_shift_limit=10),
                     A.Blur(blur_limit=3, p=0.1),
                 ]
             )
@@ -104,7 +104,7 @@ class FundusDataModule(BaseDataModule):
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
-            persistent_workers=self.persistent_workers,
+            persistent_workers=self.persistent_workers and self.num_workers > 0,
             pin_memory=True,
         )
 
@@ -112,9 +112,9 @@ class FundusDataModule(BaseDataModule):
         return DataLoader(
             self.val,
             batch_size=self.batch_size,
-            shuffle=False,
+            shuffle=shuffle,
             num_workers=self.num_workers,
-            persistent_workers=self.persistent_workers and persistent_workers,
+            persistent_workers=self.persistent_workers and persistent_workers and self.num_workers > 0,
             pin_memory=True,
         )
 
@@ -126,6 +126,95 @@ class FundusDataModule(BaseDataModule):
             persistent_workers=False,
             pin_memory=True,
         )
+
+
+class DDRDataModule(FundusDataModule):
+    def setup(self, stage: str):
+        if stage == "fit":
+            df = pd.read_csv(os.path.join(self.root_img, "train.txt"), sep=" ", names=["image", "label"])
+            df = df[df["label"] != 5]
+            dataset = ClassificationDataset(
+                os.path.join(self.root_img, "train/"),
+                label_dataframe=df,
+                shape=self.img_size,
+                keep_size_ratio=True,
+                use_cache=False,
+                auto_pad=True,
+            )
+            self.train = dataset
+            if self.use_cache:
+                self.train.use_cache = True
+                self.train.init_cache()
+        if stage == "validate":
+            df = pd.read_csv(os.path.join(self.root_img, "valid.txt"), sep=" ", names=["image", "label"])
+            df = df[df["label"] != 5]
+
+            dataset = ClassificationDataset(
+                os.path.join(self.root_img, "valid/"),
+                label_dataframe=df,
+                shape=self.img_size,
+                keep_size_ratio=True,
+                use_cache=False,
+                auto_pad=True,
+            )
+            self.val = dataset
+            if self.use_cache:
+                self.val.use_cache = True
+                self.val.init_cache()
+        if stage == "test":
+            df = pd.read_csv(os.path.join(self.root_img, "test.txt"), sep=" ", names=["image", "label"])
+            df = df[df["label"] != 5]
+
+            dataset = ClassificationDataset(
+                os.path.join(self.root_img, "test/"),
+                label_dataframe=df,
+                shape=self.img_size,
+                keep_size_ratio=True,
+                use_cache=False,
+                auto_pad=True,
+            )
+            self.test = dataset
+            if self.use_cache:
+                self.test.use_cache = True
+                self.test.init_cache()
+        super().setup(stage)
+
+
+class IDRiDDataModule(FundusDataModule):
+    def setup(self, stage: str):
+        if stage in ["fit", "validate"]:
+            label_filepath = os.path.join(self.root_img, "2. Groundtruths/a. IDRiD_Disease Grading_Training Labels.csv")
+            dataset = ClassificationDataset(
+                os.path.join(self.root_img, "1. Original Images/a. Training Set/"),
+                label_filepath=label_filepath,
+                file_column="Image name",
+                gt_column="Retinopathy grade",
+                shape=self.img_size,
+                keep_size_ratio=True,
+                use_cache=False,
+                auto_pad=True,
+            )
+            if isinstance(self.valid_size, float):
+                self.valid_size = int(len(dataset) * self.valid_size)
+
+            val_length = self.valid_size
+            train_length = len(dataset) - val_length
+            self.train, self.val = random_split(dataset, [train_length, val_length])
+            self.train.remap("Retinopathy grade", "label")
+            self.val.remap("Retinopathy grade", "label")
+        if stage == "test":
+            label_filepath = os.path.join(self.root_img, "2. Groundtruths/b. IDRiD_Disease Grading_Testing Labels.csv")
+            self.test = ClassificationDataset(
+                os.path.join(self.root_img, "1. Original Images/b. Testing Set/"),
+                shape=self.img_size,
+                keep_size_ratio=True,
+                file_column="Image name",
+                gt_column="Retinopathy grade",
+                label_filepath=label_filepath,
+            )
+            self.test.remap("Retinopathy grade", "label")
+            self.test.composer = None
+        super().setup(stage)
 
 
 class EyePACSDataModule(FundusDataModule):
@@ -183,16 +272,16 @@ class AptosDataModule(FundusDataModule):
             keep_size_ratio=True,
             auto_pad=True,
         )
-        if stage == 'all':
-            dataset.remap("diagnosis", "label")
+        if stage == "all":
             dataset.composer = Composition()
             self.train = dataset
             self.test = dataset
             self.val = dataset
-            super().setup('test')
-            super().setup('test')
+            super().setup("test")
+            super().setup("test")
             return
-        
+
+        dataset.remap("diagnosis", "label")
         fold = StratifiedKFold(5, shuffle=True, random_state=2)
         list_index = np.arange(len(dataset))
         list_labels = dataset.gts["label"]
@@ -204,14 +293,11 @@ class AptosDataModule(FundusDataModule):
             self.train, self.val = random_split(dataset, [train_length, val_length])
             self.train.composer = Composition()
             self.val.composer = Composition()
-            self.train.remap("diagnosis", "label")
-            self.val.remap("diagnosis", "label")
 
         if stage == "test":
             dataset.subset(np.asarray(test_index))
             self.test = dataset
             self.test.composer = Composition()
-            self.test.remap("diagnosis", "label")
         super().setup(stage)
 
 

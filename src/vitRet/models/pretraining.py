@@ -5,6 +5,7 @@ import torch.nn as nn
 from pytorch_lightning import LightningModule
 
 from vitRet.models.stochastic_attention.tokenization import MultiScaleTokenization, Projector
+from vitRet.utils.ckpts import ModelCkpt
 
 
 class TokenizerWithProjector(torch.nn.Module):
@@ -52,39 +53,37 @@ class PretrainModule(LightningModule):
         self.reference_projector = TokenizerWithProjector(projection_stride=4, 
                                                           img_size=1024)
 
-        ckpt_path = "/usagers/clpla/Experimentations/RetinalViT/checkpoints/usual-dream-229/epoch=42-step=27907.ckpt"
-
+        ckpt_path = ModelCkpt.STANDARD
         state_dict = torch.load(ckpt_path)["state_dict"]
-        state_dict["model.tokenizer.cls_pos_embed"].unsqueeze_(1)
+        state_dict["model.tokenizer.cls_pos_embed"] 
         state_dict["model.tokenizer.cls_token"].squeeze_(1)
         for k in list(state_dict.keys()):
-            state_dict[k.strip("model.")] = state_dict.pop(k, None)
-
-        self.reference_projector.load_state_dict(state_dict, strict=False)
-
-        self.trained_projector = TokenizerWithProjector(first_embedding_dim=16, projection_stride=4, img_size=1024
-                                                        )
+            state_dict[k.replace("model.", '')] = state_dict.pop(k, None)
+        _ = self.reference_projector.load_state_dict(state_dict, strict=False)
+        self.trained_projector = TokenizerWithProjector(first_embedding_dim=32, projection_stride=4, img_size=1024)
         self.loss = nn.MSELoss()
         self.lr = lr
+    
+    def forward(self, img, segments):
+        with torch.no_grad():
+            gts_seq = self.reference_projector(img, segments)
+        pred_seq = self.trained_projector(img, segments)
+        return pred_seq, gts_seq
         
     def training_step(self, batch, batch_idx):
         img = batch["image"]
         segments = batch["segments"]
-        with torch.no_grad():
-            gts_seq = self.reference_projector(img, segments)
-        pred_seq = self.trained_projector(img, segments)
+        pred_seq, gts_seq = self(img, segments)
         loss = self.loss(pred_seq, gts_seq)
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         img = batch["image"]
         segments = batch["segments"]
-        with torch.no_grad():
-            gts_seq = self.reference_projector(img, segments)
-        pred_seq = self.trained_projector(img, segments)
+        pred_seq, gts_seq = self(img, segments)
         loss = self.loss(pred_seq, gts_seq)
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, sync_dist=True)
         return loss
 
     def configure_optimizers(self):

@@ -4,23 +4,24 @@ import torch
 from nntools.utils import Config
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import (
-    EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import WandbLogger
-from vitRet.data.fundus import EyePACSDataModule
+from vitRet.data.fundus import DDRDataModule, EyePACSDataModule
 from vitRet.my_lightning_module import LogValidationAttentionMap, TrainerModule
 
 torch.set_float32_matmul_precision("medium")
-torch.autograd.set_detect_anomaly(True)
-
 
 def train():
     config = Config("configs/config.yaml")
     seed_everything(1234, workers=True)
 
-    eyepacs_datamodule = EyePACSDataModule(**config["data"])
+    # eyepacs_datamodule = EyePACSDataModule(**config["data"])
+    ddr_datamodule = DDRDataModule(**config["data"])
+    ddr_datamodule.setup('validate')
+    ddr_datamodule.setup('fit')
+    ddr_datamodule.setup('test')
     model = TrainerModule(config["model"], config["training"])
 
     wandb_logger = WandbLogger(**config["logger"], config=config.tracked_params)
@@ -47,6 +48,6 @@ def train():
             LearningRateMonitor(),
         ],
     )
-    trainer.fit(model, datamodule=eyepacs_datamodule)
-    trainer.test(model, datamodule=eyepacs_datamodule, ckpt_path="best")
+    trainer.fit(model, datamodule=ddr_datamodule)
+    trainer.test(model, datamodule=ddr_datamodule, ckpt_path="best")
 

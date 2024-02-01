@@ -39,7 +39,6 @@ def get_datamodule(img_size, scales, n_segments, aptos=False, batch_size=8):
 def get_model(ckpt_path, **kwargs):
     model = TrainerModule(**kwargs)
     state_dict = torch.load(ckpt_path, map_location="cpu")["state_dict"]
-    state_dict["model.tokenizer.cls_pos_embed"].unsqueeze_(1)
     pos_embed = state_dict["model.projector.pos_embed"]
     state_dict["model.projector.pos_embed"] = F.interpolate(pos_embed, 
                                                             size=model.model.projector.pos_embed.shape[-2:], 
@@ -68,11 +67,11 @@ def compressed_embedded_model(ckpt_path, **kwargs):
 
 def test():
     seed_everything(1234, workers=True)
-    img_size = (1024, 1024)
+    img_size = (2048, 2048)
     scales = 1
-    datamodule = get_datamodule(img_size, scales, 2048, aptos=True, batch_size=2)
+    datamodule = get_datamodule(img_size, scales, 4096, aptos=True, batch_size=3)
 
-    ckpt_path = ModelCkpt.STANDARD
+    ckpt_path = 'checkpoints/efficient-wood-282/epoch=3-step=2596.ckpt'
     network_config = {
         "arch": "svt_16_base",
         "img_size": img_size,
@@ -80,7 +79,7 @@ def test():
         "num_classes": 5,
         "max_tokens": 4096,
         "scales": scales,
-        "projection_stride": 4,
+        "projection_stride": 1,
         "qkv_bias": True,
         "drop_path": 0.2,
         "global_pool": False,
@@ -90,9 +89,9 @@ def test():
     training_config = {
         "as_regression": True,
     }
-    model = compressed_embedded_model(ckpt_path, network_config=network_config, training_config=training_config)
+    model = get_model(ckpt_path, network_config=network_config, training_config=training_config)
     model.eval()
-    trainer = Trainer(accelerator="gpu")
+    trainer = Trainer(accelerator="auto")
     trainer.test(model, dataloaders=datamodule.val_dataloader())
 
 

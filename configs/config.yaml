@@ -6,25 +6,25 @@ logger:
   project: StochasticAttention-DiabeticRetinopathy
 
 data:
-  data_dir: /home/tmp/clpla/data/eyepacs/
+  data_dir: /home/clement/Documents/data/DDR/DDR-dataset/DR_grading/
   img_size: *img_shape
-  batch_size: 16
+  batch_size: 6
   valid_size: 4000
-  num_workers: 8
+  num_workers: 7
   superpixels_max_nb: 8192
   superpixels_min_nb: 1024
   superpixels_scales: *scales
   superpixels_filter_black: True
+  superpixels_num_threads: 1
 
 model:
   first_embedding_dim: 32
-  arch: svt_16_base
+  arch: svt_16_large
   img_size: *img_shape
   num_classes: 5
   max_tokens: 4096
   scales: *scales
-  projection_stride: 2
-  qkv_bias: True
+  projection_stride: 1
   pretrained: True
   drop_path: 0.2
   global_pool: False
@@ -33,40 +33,20 @@ model:
   detach_input: False
   
 training:
-  lr: 0.00003
-  layer_decay: 0.65
-  pct_start: 0.25
+  lr: 0.0001
   as_regression: True
   optimizer:
     betas: [.9, .999]
     weight_decay: 0.0005
-  # mixup:
-  #   mixup_alpha: 0
-  #   cutmix_alpha: 0
-  #   cutmix_minmax:
-  #   prob: 1.0
-  #   switch_prob: 0.5
-  #   mode: batch
-  #   label_smoothing: 0.1
-  #   num_classes: 5
-
-# data:
-#   csv_file: /usagers/clpla/data/imageNet/val_solution.csv
-#   data_dir: /home/tmp/clpla/data/imagenet/ILSVRC/Data/CLS-LOC/
-#   synset_mapping: /usagers/clpla/data/imageNet/LOC_synset_mapping.txt
-#   img_size: *img_shape
-#   batch_size: 48 
-#   valid_size: 0.005
-#   num_workers: 8
-
 
 trainer:
   accumulate_grad_batches: 4
-  accelerator: gpu
+  strategy: auto
+  accelerator: auto
   deterministic: False
-  devices: auto
+  devices: 3
   max_epochs: 100
-  precision: bf16-mixed
+  precision: 32
   gradient_clip_val: 1.0
   check_val_every_n_epoch: 1
   num_sanity_val_steps: 2

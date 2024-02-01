@@ -1,4 +1,3 @@
-
 from typing import Iterator, Optional, Tuple, Type, Union
 
 import torch
@@ -40,7 +39,7 @@ class StochasticVisionTransformer(nn.Module):
         global_pool: bool = False,
         proj_drop_rate: float = 0.0,
         attn_drop_rate: float = 0.0,
-        drop_path_rate: float = 0.,
+        drop_path_rate: float = 0.0,
         padding: int = 0,
         first_embedding_dim=768,
         detach_input=False,
@@ -68,7 +67,7 @@ class StochasticVisionTransformer(nn.Module):
             global_pool=global_pool,
         )
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
-        
+
         self.blocks = nn.ModuleList(
             [
                 Block(
@@ -102,15 +101,17 @@ class StochasticVisionTransformer(nn.Module):
         if self.detach_input:
             for param in self.projector.parameters():
                 param.requires_grad = False
+        
+        self.attr_cls = 3
 
     @property
     def is_compressed(self):
         return self.projector.out_chans != self.embed_dim
-        
+
     @property
     def no_weight_decay(self):
         return ["projector.pos_embed", "tokenizer.cls_token", "tokenizer.cls_pos_embed"]
-    
+
     def parameters(self, recurse: bool = True):
         params = []
         named_parameters = self.named_parameters(recurse=True)
@@ -119,25 +120,27 @@ class StochasticVisionTransformer(nn.Module):
                 continue
             params.append(param)
         return params
-    
-    def named_parameters(self, prefix: str = '', recurse: bool = True, remove_duplicate: bool = True) -> Iterator[Tuple[str, Parameter]]:
-        named_parameters =  super().named_parameters(prefix, recurse, remove_duplicate)
+
+    def named_parameters(
+        self, prefix: str = "", recurse: bool = True, remove_duplicate: bool = True
+    ) -> Iterator[Tuple[str, Parameter]]:
+        named_parameters = super().named_parameters(prefix, recurse, remove_duplicate)
         for name, param in named_parameters:
             if self.detach_input and "projector" in name:
                 continue
             yield name, param
-    
+
     def forward(self, img: torch.Tensor, segments: torch.Tensor, return_attention: bool = False):
         x = self.projector(img)
         if self.detach_input:
             x = x.detach()
-            
+
         seqs, segments = self.tokenizer(x, segments)
 
         predictor_token, attention_map = self.forward_sequences(seqs, segments)
         predictor_token = self.fc_norm(predictor_token)
         predictor_token = self.head_drop(predictor_token)
-        if predictor_token.ndim==3:
+        if predictor_token.ndim == 3:
             predictor_token = predictor_token.mean(1)
         classification = self.head(predictor_token)
         if return_attention:
@@ -145,7 +148,7 @@ class StochasticVisionTransformer(nn.Module):
             return classification, attention_map
 
         return classification
-    
+
     def forward_features(self, x: torch.Tensor):
         """
         Importance score based on:
@@ -153,22 +156,42 @@ class StochasticVisionTransformer(nn.Module):
         Args:
             sequence (torch.Tensor): Tensor of shape B x N x C
         """
-        for block in self.blocks:
+        for i, block in enumerate(self.blocks):
             x, attn, value = block(x, return_attention=True, return_value=True)
+        
+        # weights_mat = block.attn.proj.weight.T @ block.mlp.fc1.weight.T @ block.mlp.fc2.weight.T + block.attn.proj.weight.T
+
         # Compute importance score
         v_i = value[:, :, 1:]  # B x H x N x d
-        attn = attn[:, :, 0, 1:]  # B x H x N
-        v_norm = v_i.norm(dim=-1, keepdim=False)  # B x H x N
+        # v = v_i.permute(0, 2, 1, 3).flatten(-2) @ weights_mat  # B x N x H x d
+        v = v_i
+        # x_i = x[:, 1:, :]  # B x N x d
+        # x_i = self.norm(x_i)
+        # x_i = self.head_drop(x_i) 
+        # pred_attn = self.head(x_i)  # B x N x 1
+        
+        # pred_attn[pred_attn > self.attr_cls + .5] = 0
+        # pred_attn[pred_attn < self.attr_cls - .5] = 0
+        # pred_attn[pred_attn != 0] = 1
+        attn = attn[:, :, 0, 1:] 
+
+        v_norm = v.norm(dim=-1, keepdim=False)  # B x H x N
+        if v_norm.ndim != attn.ndim:
+            v_norm.unsqueeze_(1)
         importance_score = attn * v_norm  # B x H x N
-        importance_score = importance_score / (importance_score.sum(dim=-1, keepdim=True)+1e-7)  # B x H x N
-        importance_score = importance_score.sum(dim=1)  # B x N
+        importance_score = importance_score / (importance_score.sum(dim=-1, keepdim=True) + 1e-7)  # B x H x N
+
+        importance_score = importance_score.std(dim=1)  # B x N
+        # importance_score = pred_attn * importance_score.unsqueeze(-1)
+        importance_score.squeeze_(-1)
+
         return x, importance_score
 
     @torch.no_grad()
     def resample_sequence(self, sequence: torch.Tensor, segment: torch.Tensor, resampling_map: torch.Tensor):
         seg_distribution = scatter(resampling_map.flatten(1), segment.flatten(1))
         distribution = torch.nan_to_num(seg_distribution)
-        distribution = distribution - distribution.min(1, keepdim=True)[0]
+        distribution = distribution - distribution.min(1, keepdim=True)[0] + 1e-7
 
         indices = torch.multinomial(
             distribution,
@@ -241,7 +264,7 @@ class StochasticVisionTransformer(nn.Module):
         if len(predictors_tokens) > 1:
             predictors_tokens = torch.cat(predictors_tokens, 1)
         else:
-            predictors_tokens = predictors_tokens[0].squeeze(1)    
+            predictors_tokens = predictors_tokens[0].squeeze(1)
         global_attention_map = global_attention_map.view(-1, H, W)
         return predictors_tokens, global_attention_map
 

@@ -6,7 +6,8 @@ import torch.nn.functional as F
 from timm.models.vision_transformer import VisionTransformer
 
 from vitRet.models.stochastic_attention.stochastic_vit import StochasticVisionTransformer
-from vitRet.utils.ckpts import ProjectorCkpt
+from vitRet.utils.ckpts import ModelCkpt, ProjectorCkpt
+
 
 def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisionTransformer):
     
@@ -33,7 +34,8 @@ def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisio
                 only_projector[k.replace('trained_projector.', '')] = v
         
         pos_embed = only_projector["projector.pos_embed"]
-        
+        if not pos_embed.shape[1] == model.projector.pos_embed.shape[2]:
+            return model
         only_projector["projector.pos_embed"] = F.interpolate(pos_embed, 
                                                         size=model.projector.pos_embed.shape[-2:], 
                                                         mode="bilinear")
@@ -110,6 +112,27 @@ def svt_16_base(num_classes: int, *args, pretrained=True, **kwargs):
         model = load_weights_from_timm(timm_model, model)
     return model
 
+def svt_16_base_fundus(num_classes: int, *args, pretrained=True, **kwargs):
+    model = StochasticVisionTransformer(
+        num_classes=num_classes, embed_dim=768, depth=12, num_heads=12, kernel_size=16, *args, **kwargs
+    )
+    ckpt_path = ModelCkpt.STANDARD
+    projector_ckpt_path = ProjectorCkpt.DEPTH_32
+    state_dict = torch.load(ckpt_path, map_location='cpu')['state_dict']
+    for k in list(state_dict.keys()):
+        state_dict[k.replace('model.', '')] = state_dict.pop(k)
+    state_dict['tokenizer.cls_token'].squeeze_(1)
+
+    projector_dict = torch.load(projector_ckpt_path, map_location='cpu')['state_dict']
+    for k, v in projector_dict.items():
+        if k.startswith('trained_projector.'):
+            state_dict[k.replace('trained_projector.', '')] = v
+
+    state_dict['projector.pos_embed'] = F.interpolate(state_dict['projector.pos_embed'], 
+                                                    size=model.projector.pos_embed.shape[-2:], 
+                                                    mode='bilinear')
+    model.load_state_dict(state_dict=state_dict, strict=True)
+    return model
 
 def svt_32_base(num_classes: int, *args, pretrained=True, **kwargs):
     model = StochasticVisionTransformer(
@@ -198,6 +221,7 @@ models = {
     "svt_16_large": svt_16_large,
     "svt_custom": svt_custom,
     "svt_retfound": svt_retfound,
+    "svt_16_base_fundus": svt_16_base_fundus
 }
 
 

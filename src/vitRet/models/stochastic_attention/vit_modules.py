@@ -48,7 +48,6 @@ class Block(timmBlock):
         attn_out = self.attn(self.norm1(x), return_attention, return_value)
         if not isinstance(attn_out, tuple):
             attn_out = (attn_out, )
-            
         x = x + self.drop_path1(self.ls1(attn_out[0]))
         x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
         return (x, *attn_out[1:])

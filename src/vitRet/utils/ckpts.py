@@ -1,9 +1,9 @@
 from pathlib import Path
 
-ROOT = Path('/usagers/clpla/Experimentations/RetinalViT/checkpoints/')
+ROOT = Path('/home/clement/Documents/Projets/RetinalViT/checkpoints')
 
 class ProjectorCkpt:
-    DEPTH_32 = ROOT / 'stellar-spaceship-9/epoch=83-step=6888.ckpt'
+    DEPTH_32 = ROOT / 'cerulean-hill-14/epoch=29-step=29190.ckpt'
     
      
 

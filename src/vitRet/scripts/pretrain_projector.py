@@ -38,7 +38,7 @@ def train():
         save_top_k=1,
         dirpath=os.path.join("checkpoints", os.environ["WANDB_RUN_NAME"]),
     )
-
+    config['trainer']['strategy'] = "ddp_find_unused_parameters_true"
     trainer = Trainer(
         **config["trainer"],
         logger=wandb_logger,
