@@ -1,0 +1,35 @@
+
+define: &img_shape [1024, 1024]
+
+logger:
+  project: Protoype-ViT initialization
+
+data:
+  data_dir: /home/tmp/clpla/data/Maples-DR/
+  img_size: *img_shape
+  batch_size: 12
+  valid_size: 0.2
+  num_workers: 8
+  superpixels_nb: 4096
+  superpixels_filter_black: True
+  superpixels_num_threads: -1
+
+model:
+  features_extractor: resnet34
+  n_protos: 13
+  
+training:
+  lr: 0.0005
+  weight_decay: 0.
+
+trainer:
+  accumulate_grad_batches: 1
+  strategy: ddp_find_unused_parameters_false
+  accelerator: auto
+  deterministic: False
+  max_epochs: 100
+  precision: 32
+  gradient_clip_val: 1.0
+  check_val_every_n_epoch: 1
+  num_sanity_val_steps: 2
+  fast_dev_run: False
