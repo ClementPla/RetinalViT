@@ -136,7 +136,7 @@ class MaplesDR(LightningDataModule):
         elif stage == "test":
             path = os.path.join(self.data_dir, "test", "fundus")
             mask_root = {label: os.path.join(self.data_dir, "test", label) for label in self.labels}
-            ops = [concat_mask, fundus_autocrop, self.img_size_ops(), self.normalize_and_cast_op()]
+            ops = [concat_mask, fundus_autocrop, *self.img_size_ops(), *self.normalize_and_cast_op()]
             dataset = SegmentationDataset(
                 img_root=path,
                 mask_root=mask_root,
