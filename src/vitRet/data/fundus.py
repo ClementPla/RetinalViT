@@ -51,6 +51,7 @@ class FundusDataModule(BaseDataModule):
         superpixels_min_nb=32,
         superpixels_filter_black=True,
         superpixels_num_threads=1,
+        superpixels_compactness=10,
     ):
         super(FundusDataModule, self).__init__(
             img_size,
@@ -64,6 +65,7 @@ class FundusDataModule(BaseDataModule):
             superpixels_min_nb=superpixels_min_nb,
             superpixels_filter_black=superpixels_filter_black,
             superpixels_num_threads=superpixels_num_threads,
+            superpixels_compactness=superpixels_compactness
         )
         self.root_img = data_dir
 
@@ -72,12 +74,11 @@ class FundusDataModule(BaseDataModule):
         test_composer.add(fundus_autocrop, *self.img_size_ops(), *self.normalize_and_cast_op())
         train_composer = Composition()
         train_composer.add(fundus_autocrop, *self.img_size_ops(), *self.data_aug_ops(), *self.normalize_and_cast_op())
-
-        if stage == "fit":
+        if self.train:
             self.train.composer = train_composer
-        elif stage == "validate":
+        if self.val:
             self.val.composer = test_composer
-        elif stage == "test":
+        if self.test:
             self.test.composer = test_composer
 
     @property
@@ -219,7 +220,7 @@ class IDRiDDataModule(FundusDataModule):
 
 class EyePACSDataModule(FundusDataModule):
     def setup(self, stage: str) -> None:
-        if stage == "fit" or stage == "validate":
+        if stage in ["fit", "validate"]:
             dataset = ClassificationDataset(
                 os.path.join(self.root_img, "train/images/"),
                 label_filepath=os.path.join(self.root_img, "trainLabels.csv"),
@@ -256,7 +257,6 @@ class EyePACSDataModule(FundusDataModule):
                 extract_image_id_function=filter_name,
             )
             self.test.remap("level", "label")
-            self.test.composer = None
 
         super().setup(stage)
 
@@ -303,7 +303,8 @@ class AptosDataModule(FundusDataModule):
 
 if __name__ == "__main__":
     datamodule = EyePACSDataModule("/usagers/clpla/data/eyepacs/")
-    datamodule.setup("fit")
+    datamodule.setup("validate")
 
-    dataset = datamodule.train
-    print(len(dataset))
+    dataset = datamodule.val
+    print(dataset.composer)
+    print(dataset[0].keys())

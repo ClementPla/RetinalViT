@@ -1,25 +1,27 @@
 
-define: &img_shape [1024, 1024]
+define: &img_shape [512, 512]
 define: &scales 1
 
 logger:
   project: StochasticAttention-DiabeticRetinopathy
 
 data:
-  data_dir: /home/clement/Documents/data/DDR/DDR-dataset/DR_grading/
+  data_dir: /home/tmp/clpla/data/eyepacs/
   img_size: *img_shape
-  batch_size: 6
+  batch_size: 16
   valid_size: 4000
-  num_workers: 7
+  num_workers: 15
   superpixels_max_nb: 8192
   superpixels_min_nb: 1024
   superpixels_scales: *scales
   superpixels_filter_black: True
-  superpixels_num_threads: 1
+  superpixels_num_threads: -1
+  superpixels_compactness: 1
+  use_superpixels: True
 
 model:
-  first_embedding_dim: 32
-  arch: svt_16_large
+  first_embedding_dim: 64
+  arch: svt_16_base
   img_size: *img_shape
   num_classes: 5
   max_tokens: 4096
@@ -33,21 +35,24 @@ model:
   detach_input: False
   
 training:
-  lr: 0.0001
+  lr: 0.001
   as_regression: True
+  pct_start: 0.1
   optimizer:
     betas: [.9, .999]
-    weight_decay: 0.0005
+    weight_decay: 0.00003
+    fused: fused
 
 trainer:
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 24
   strategy: auto
   accelerator: auto
   deterministic: False
-  devices: 3
-  max_epochs: 100
+  devices: auto
+  max_epochs: 1000
   precision: 32
-  gradient_clip_val: 1.0
+  # gradient_clip_val: 1.0
+  # gradient_clip_algorithm: norm
   check_val_every_n_epoch: 1
   num_sanity_val_steps: 2
   fast_dev_run: False

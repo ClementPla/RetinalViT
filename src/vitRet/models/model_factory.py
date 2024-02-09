@@ -27,7 +27,11 @@ def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisio
 
     if model.is_compressed:
         ckpt = ProjectorCkpt.DEPTH_32
-        projector_dict = torch.load(ckpt, map_location='cpu')["state_dict"]
+        try:
+            projector_dict = torch.load(ckpt, map_location='cpu')["state_dict"]
+        except FileNotFoundError:
+            return model
+            
         only_projector = {}
         for k, v in projector_dict.items():
             if k.startswith('trained_projector.'):

@@ -143,26 +143,22 @@ class TrainerModule(pytorch_lightning.LightningModule):
         ]
 
     def configure_optimizers(self) -> Any:
-        decay = []
-        no_decay = []
-        for name, param in self.model.named_parameters():
-            if name in self.model.no_weight_decay:
-                no_decay.append(param)
-            else:
-                decay.append(param)
+        
+        params_groups = lrd.param_groups_lrd(self.model,
+                                            weight_decay=self.training_config["optimizer"]["weight_decay"],
+                                            no_weight_decay_list=self.model.no_weight_decay,
+                                            layer_decay=self.training_config.get("layer_decay", 0.0))
 
-        params = [
-            {"params": decay, "weight_decay": self.training_config["optimizer"]["weight_decay"]},
-            {"params": no_decay, "weight_decay": 0.0},
-        ]
-
-        optimizer = torch.optim.AdamW(params, lr=self.training_config["lr"], **self.training_config["optimizer"])
+        optimizer = torch.optim.AdamW(params_groups, lr=self.training_config["lr"], **self.training_config["optimizer"])
         return [optimizer], [
             {
-                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=0.1, mode="min"),
-                "monitor": "val_loss",
-                "interval": "epoch",
-                "frequency": 1,
+                "scheduler": torch.optim.lr_scheduler.OneCycleLR(
+                    optimizer,
+                    max_lr=self.training_config["lr"],
+                    total_steps=self.trainer.estimated_stepping_batches,
+                    pct_start=self.training_config["pct_start"],
+                ),
+                "interval": "step",
             }
         ]
 

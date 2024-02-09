@@ -25,7 +25,8 @@ class BaseDataModule(LightningDataModule):
         superpixels_max_nb=2048,
         superpixels_min_nb=32,
         superpixels_filter_black=True,
-        superpixels_num_threads=1
+        superpixels_num_threads=1,
+        superpixels_compactness=10
     ):
         super().__init__()
         self.img_size = img_size
@@ -57,7 +58,7 @@ class BaseDataModule(LightningDataModule):
                 convert_to_lab=True,
                 min_size_factor=0,
                 manhattan_spatial_dist=False,
-                compactness=10,
+                compactness=superpixels_compactness,
                 num_threads=superpixels_num_threads,
             )
             for seg_nb in segments_nb

@@ -64,6 +64,6 @@ def get_layer_id_for_vit(name, num_layers):
     elif name.startswith("projector"):
         return 0
     elif name.startswith("blocks"):
-        return int(name.split(".")[2]) + 1
+        return int(name.split(".")[1]) + 1
     else:
         return num_layers

@@ -17,11 +17,11 @@ def train():
     config = Config("configs/config.yaml")
     seed_everything(1234, workers=True)
 
-    # eyepacs_datamodule = EyePACSDataModule(**config["data"])
-    ddr_datamodule = DDRDataModule(**config["data"])
-    ddr_datamodule.setup('validate')
-    ddr_datamodule.setup('fit')
-    ddr_datamodule.setup('test')
+    datamodule = EyePACSDataModule(**config["data"])
+    # ddr_datamodule = DDRDataModule(**config["data"])
+    datamodule.setup('fit')
+    datamodule.setup('validate')
+    datamodule.setup('test')
     model = TrainerModule(config["model"], config["training"])
 
     wandb_logger = WandbLogger(**config["logger"], config=config.tracked_params)
@@ -48,6 +48,6 @@ def train():
             LearningRateMonitor(),
         ],
     )
-    trainer.fit(model, datamodule=ddr_datamodule)
-    trainer.test(model, datamodule=ddr_datamodule, ckpt_path="best")
+    trainer.fit(model, datamodule=datamodule)
+    trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
