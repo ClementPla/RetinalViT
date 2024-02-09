@@ -92,9 +92,9 @@ class MaplesDR(LightningDataModule):
         self.slic = Slic(
                 num_components=superpixels_nb,
                 convert_to_lab=True,
-                min_size_factor=0,
+                min_size_factor=0.1,
                 manhattan_spatial_dist=False,
-                compactness=0.1,
+                compactness=1,
                 num_threads=superpixels_num_threads,
             )
         

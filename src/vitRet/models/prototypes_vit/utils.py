@@ -6,7 +6,7 @@ from torch_geometric.utils import remove_self_loops, to_dense_adj
 def get_superpixels_adjacency(segments:torch.Tensor, keep_self_loops:bool=False):
     """
     Return the adjacency matrix for the superpixel segmentation map. 
-    Each value of the adjacency matrix corresponds to the number neighboring of pixels 
+    Each value of the adjacency matrix corresponds to the number of touching pixels between two segments.
     segments: tensor (type int64) of shape BxWxH
     """
     # Maximum number of segments in the batch
