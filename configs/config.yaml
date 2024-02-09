@@ -1,5 +1,5 @@
 
-define: &img_shape [512, 512]
+define: &img_shape [1024, 1024]
 define: &scales 1
 
 logger:
