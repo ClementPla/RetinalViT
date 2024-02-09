@@ -42,10 +42,8 @@ def concat_mask(
         optic_cup,
         optic_disc,
     ]
-    
     label = np.asarray(masks).transpose(1, 2, 0)
-    bg_label = ~np.any(label, axis=-1, keepdims=True)
-    return {"label": np.concatenate([label, bg_label], axis=-1)}
+    return {"label": label}
 
 @nntools_wrapper
 def fundus_autocrop(image: np.ndarray, label: np.ndarray):

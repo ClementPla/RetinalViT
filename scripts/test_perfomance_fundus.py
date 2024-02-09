@@ -67,9 +67,10 @@ def compressed_embedded_model(ckpt_path, **kwargs):
 
 def test():
     seed_everything(1234, workers=True)
-    img_size = (2048, 2048)
+    img_size = (1024, 1024)
     scales = 1
-    datamodule = get_datamodule(img_size, scales, 4096, aptos=True, batch_size=3)
+    ntokens = 4096
+    datamodule = get_datamodule(img_size, scales, ntokens, aptos=True, batch_size=16)
 
     ckpt_path = 'checkpoints/efficient-wood-282/epoch=3-step=2596.ckpt'
     network_config = {
@@ -91,8 +92,19 @@ def test():
     }
     model = get_model(ckpt_path, network_config=network_config, training_config=training_config)
     model.eval()
-    trainer = Trainer(accelerator="auto")
+    trainer = Trainer(accelerator="auto", devices=1)
     trainer.test(model, dataloaders=datamodule.val_dataloader())
+
+    scores = model.test_metrics.compute()
+    confMat = model.confusion_matrix.compute()
+
+    save_dict = {
+        "scores": scores,
+        "confMat": confMat,
+    }
+    torch.save(save_dict, f"results/scores_{ntokens}_res{img_size[0]}.pt")
+
+
 
 
 if __name__ == "__main__":

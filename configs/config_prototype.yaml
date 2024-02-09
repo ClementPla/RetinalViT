@@ -7,29 +7,29 @@ logger:
 data:
   data_dir: /home/tmp/clpla/data/Maples-DR/
   img_size: *img_shape
-  batch_size: 12
+  batch_size: 4
   valid_size: 0.2
   num_workers: 8
   superpixels_nb: 4096
   superpixels_filter_black: True
-  superpixels_num_threads: -1
+  superpixels_num_threads: 0
 
 model:
   features_extractor: resnet34
-  n_protos: 13
+  n_protos: 12
   
 training:
-  lr: 0.0005
+  lr: 0.001
   weight_decay: 0.
 
 trainer:
   accumulate_grad_batches: 1
-  strategy: ddp_find_unused_parameters_false
-  accelerator: auto
+  strategy: ddp_find_unused_parameters_true
+  accelerator: gpu
   deterministic: False
   max_epochs: 100
   precision: 32
   gradient_clip_val: 1.0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 10
   num_sanity_val_steps: 2
   fast_dev_run: False

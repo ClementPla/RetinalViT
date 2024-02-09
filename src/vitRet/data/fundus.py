@@ -272,16 +272,16 @@ class AptosDataModule(FundusDataModule):
             keep_size_ratio=True,
             auto_pad=True,
         )
+        dataset.remap("diagnosis", "label")
         if stage == "all":
             dataset.composer = Composition()
             self.train = dataset
             self.test = dataset
             self.val = dataset
             super().setup("test")
-            super().setup("test")
             return
 
-        dataset.remap("diagnosis", "label")
+        
         fold = StratifiedKFold(5, shuffle=True, random_state=2)
         list_index = np.arange(len(dataset))
         list_labels = dataset.gts["label"]

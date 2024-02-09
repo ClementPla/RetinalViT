@@ -10,18 +10,17 @@ import wandb
 
 
 class PrototypeTrainer(LightningModule):
-    def __init__(self, n_protos, features_extractor: str, **config_training):
+    def __init__(self, n_protos, features_extractor: str, weight=None, **config_training):
         super().__init__()
         self.n_protos = n_protos
         self.features_extractor = timm.create_model(features_extractor, pretrained=True, features_only=True)
-        self.features_extractor.requires_grad_(False)
-        self.layer_extracted = -3
+        # self.features_extractor.requires_grad_(False)
+        self.layer_extracted = -2
         f = self.features_extractor.feature_info.channels()[self.layer_extracted]
         self.prototypes = torch.nn.Parameter(
             torch.randn(n_protos, f)
         )
-        self.loss = torch.nn.CrossEntropyLoss()
-
+        self.loss = torch.nn.BCEWithLogitsLoss(weight=weight)
         self.lr = config_training.get("lr", 1e-3)
         self.wc = config_training.get("weight_decay", 1e-4)
 
@@ -30,14 +29,17 @@ class PrototypeTrainer(LightningModule):
         superpixels_segment: (B, H, W)
         gt_mask: (B, n, H, W)
         """
+        
+        # We get the sum of each groundtruth overlapping each segment
         output = scatter_add(gt_mask.flatten(-2), superpixels_segment.unsqueeze(1).flatten(2), dim=-1)
-        output[:, -1] = torch.all(output[:, :-1]==0, dim=1)
-        gt_segment = output.argmax(1)
-        return gt_segment
+        gt_segment = output.argmax(1, keepdim=True)
+        gt_segment = torch.zeros_like(output).scatter_(1, gt_segment, 1)
+        return gt_segment.long()
+    
     def forward(self, x, superpixels_segment, gt_mask, return_pred=False):
         self.features_extractor.eval()
         features = self.features_extractor(x)[self.layer_extracted]
-        features.detach_()
+        # features.detach_()
         features = F.interpolate(features, size=x.shape[-2:], mode="bilinear")
         superpixels_segment = F.interpolate(
             superpixels_segment.unsqueeze(1).float(), size=features.shape[-2:], mode="nearest"
@@ -50,9 +52,7 @@ class PrototypeTrainer(LightningModule):
         )  # B x C x N
         superfeatures = F.normalize(superfeatures, p=2, dim=1)
         prototypes = F.normalize(self.prototypes, p=2, dim=-1)
-        # superfeatures.detach_()
         compatibility_matrix = torch.matmul(prototypes, superfeatures)
-
         return compatibility_matrix, superpixels_gt, superpixels_segment
 
     def training_step(self, batch, batch_idx):
@@ -60,7 +60,7 @@ class PrototypeTrainer(LightningModule):
         superpixels_segment = batch["segments"]
         gts = batch["label"]
         cmat, gt, segment = self(image, superpixels_segment, gts)
-        loss = self.loss(cmat, gt)
+        loss = self.loss(cmat, gt.float())
         self.log("train_loss", loss)
         return loss
 
@@ -69,11 +69,14 @@ class PrototypeTrainer(LightningModule):
         superpixels_segment = batch["segments"]
         gts = batch["label"]
         cmat, gt, segment = self(image, superpixels_segment, gts)
-        loss = self.loss(cmat, gt)
+        loss = self.loss(cmat, gt.float())
         output = {"loss": loss}
 
         if batch_idx < 1:
-            pred = torch.gather(cmat.argmax(1), 1, segment.flatten(1)).view(-1, *segment.shape[-2:])
+            binary_proba = torch.sigmoid(cmat)
+            bg_proba = 1-torch.amax(binary_proba, 1, keepdim=True)
+            cmat = torch.cat((bg_proba, binary_proba), 1)
+            pred = torch.gather(cmat.argmax(1)-1, 1, segment.flatten(1)).view(-1, *segment.shape[-2:])
             output["pred"] = pred
         self.log("val_loss", loss)
         return output
@@ -98,6 +101,8 @@ class LogValidationPredictedPrototypeMap(pl.Callback):
             x = torch.nn.functional.interpolate(x, size=(512, 512), mode="bilinear")
             gt = batch["label"][:n]
             gt = torch.nn.functional.interpolate(gt.float(), size=(512, 512), mode="nearest").long()
+            bg = torch.amax(gt, 1, keepdim=True)==0
+            gt = torch.cat([bg, gt], 1)
             gt = gt.argmax(1)
             pred = outputs["pred"][:n]
             pred = (
@@ -108,6 +113,7 @@ class LogValidationPredictedPrototypeMap(pl.Callback):
             columns = ["image"]
 
             labels = [
+                'background',
                 'bright_uncertains',
                 'cottonWoolSpots',
                 'drusens',
@@ -120,7 +126,6 @@ class LogValidationPredictedPrototypeMap(pl.Callback):
                 'red_uncertains',
                 'optic_cup',
                 'optic_disc',
-                "bg",
             ]
             labels = {i: l for i, l in enumerate(labels)}
 

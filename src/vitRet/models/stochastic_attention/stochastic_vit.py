@@ -156,23 +156,27 @@ class StochasticVisionTransformer(nn.Module):
         Args:
             sequence (torch.Tensor): Tensor of shape B x N x C
         """
+        probing_layer = len(self.blocks) - 1
+
         for i, block in enumerate(self.blocks):
+            if i == probing_layer:
+                x_probed = x
             x, attn, value = block(x, return_attention=True, return_value=True)
         
-        # weights_mat = block.attn.proj.weight.T @ block.mlp.fc1.weight.T @ block.mlp.fc2.weight.T + block.attn.proj.weight.T
+        weights_mat = block.attn.proj.weight.T @ block.mlp.fc1.weight.T @ block.mlp.fc2.weight.T + block.attn.proj.weight.T
 
         # Compute importance score
         v_i = value[:, :, 1:]  # B x H x N x d
-        # v = v_i.permute(0, 2, 1, 3).flatten(-2) @ weights_mat  # B x N x H x d
-        v = v_i
-        # x_i = x[:, 1:, :]  # B x N x d
-        # x_i = self.norm(x_i)
-        # x_i = self.head_drop(x_i) 
-        # pred_attn = self.head(x_i)  # B x N x 1
+        v = v_i.permute(0, 2, 1, 3).flatten(-2) @ weights_mat  # B x N x H x d
+        # v = v_i
+        x_i = x_probed[:, 1:, :]  # B x N x d
+        x_i = self.norm(x_i)
+        x_i = self.head_drop(x_i) 
+        pred_attn = self.head(x_i)  # B x N x 1
         
-        # pred_attn[pred_attn > self.attr_cls + .5] = 0
-        # pred_attn[pred_attn < self.attr_cls - .5] = 0
-        # pred_attn[pred_attn != 0] = 1
+        pred_attn[pred_attn > self.attr_cls + .5] = 0
+        pred_attn[pred_attn < self.attr_cls - .5] = 0
+        pred_attn[pred_attn != 0] = 1
         attn = attn[:, :, 0, 1:] 
 
         v_norm = v.norm(dim=-1, keepdim=False)  # B x H x N
@@ -182,7 +186,7 @@ class StochasticVisionTransformer(nn.Module):
         importance_score = importance_score / (importance_score.sum(dim=-1, keepdim=True) + 1e-7)  # B x H x N
 
         importance_score = importance_score.std(dim=1)  # B x N
-        # importance_score = pred_attn * importance_score.unsqueeze(-1)
+        importance_score = pred_attn * importance_score.unsqueeze(-1)
         importance_score.squeeze_(-1)
 
         return x, importance_score
