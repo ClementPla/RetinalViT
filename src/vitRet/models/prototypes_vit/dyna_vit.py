@@ -6,14 +6,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from timm.layers import trunc_normal_
+from timm.layers.helpers import to_2tuple
 from timm.models.helpers import named_apply
 from timm.models.vision_transformer import Block, Mlp, PatchDropout
 from torch_geometric.nn.pool.max_pool import max_pool_x
-from torch_geometric.utils import dense_to_sparse, to_dense_batch
+from torch_geometric.utils import add_self_loops, coalesce, dense_to_sparse, to_dense_batch
 from torch_scatter import scatter
 
 from vitRet.models.prototypes_vit.cluster.cluster_edges import cluster_index
-from vitRet.models.prototypes_vit.utils import get_superpixels_adjacency, reindex_segments_from_batch
+from vitRet.models.prototypes_vit.utils import (
+    get_superpixels_adjacency,
+)
 
 
 def init_weights_vit_timm(module: nn.Module, name: str = ''):
@@ -33,22 +36,29 @@ class SegmentEmbed(nn.Module):
         self.embed_dim = embed_dim
         self.conv1 = nn.Conv2d(in_chans, inter_dim, kernel_size=kernel_size, 
                                stride=1, padding='same')
-        
-        self.pos_embed = nn.Parameter(torch.randn(1, inter_dim, img_size, img_size) * 0.02 )
+        img_size = to_2tuple(img_size)
+        self.pos_embed = nn.Parameter(torch.randn(1, inter_dim, *img_size) * 0.02 )
         self.conv2 = nn.Conv1d(inter_dim, embed_dim, kernel_size=3, padding=1)
 
     def init_weights(self):
         trunc_normal_(self.pos_embed, std=.02)
+
 
     def forward(self, x, segment):
         x = self.conv1(x)
         x = x + self.pos_embed
         if segment.ndim == 3:
             segment.unsqueeze_(1)
-        f_segment = segment.flatten(1)
-        _, f_segment = torch.unique(f_segment, return_inverse=True)
-        x = scatter(x.flatten(2), f_segment.unsqueeze(1), reduce="mean")
+
+        segment = F.interpolate(segment.float(), size=x.shape[-2:], mode='nearest').long()
+
+        f_segment = torch.cat([torch.unique(s, return_inverse=True)[1].view(s.shape).unsqueeze(0) 
+                               for s in segment], 0)
+        # f_segment = segment
+        
+        x = scatter(x.flatten(2), f_segment.flatten(2), reduce="mean")
         x = self.conv2(x).permute(0, 2, 1)
+        
         return x, f_segment.view(segment.shape)
 
 
@@ -79,6 +89,7 @@ class DynViT(nn.Module):
             block_fn: Callable = Block,
             mlp_layer: Callable = Mlp,
             number_of_prototypes: int = 16,
+            resample_every_n_blocks: int = 4,
             ) -> None:
         super().__init__()
         assert global_pool in ('', 'avg', 'token')
@@ -93,6 +104,7 @@ class DynViT(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if class_token else None
         self.pos_drop = nn.Dropout(p=pos_drop_rate)
         self.norm_pre = norm_layer(embed_dim) if pre_norm else nn.Identity()
+        self.resample_every_n_blocks = resample_every_n_blocks
 
         self.num_prefix_tokens = 1 if class_token else 0
 
@@ -115,7 +127,8 @@ class DynViT(nn.Module):
             )
             for i in range(depth)])
         
-        self.prototypes = nn.Parameter(torch.randn(depth, number_of_prototypes, embed_dim))
+        k_protos = depth // self.resample_every_n_blocks
+        self.prototypes = nn.Parameter(torch.randn(k_protos, number_of_prototypes, embed_dim))
         self.segment_embed = SegmentEmbed(kernel_size=patch_size,
                                           in_chans=in_chans, 
                                           inter_dim=inter_dim, 
@@ -127,6 +140,7 @@ class DynViT(nn.Module):
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         self.init_weights()
     
+    @property
     def no_weight_decay(self):
         return {'segment_embed.pos_embed', 'cls_token', 'dist_token', 'prototypes'}
     
@@ -136,38 +150,48 @@ class DynViT(nn.Module):
         named_apply(init_weights_vit_timm, self)
 
     def _resample_sequence(self, x, segments, depth_index):
-        
+
+        if self.cls_token is not None:
+            cls_token = x[:, 0]
+            x = x[:, 1:]    
         prox_adj = self._compute_proximity_adjacency(segments)
         prototype = self.prototypes[depth_index]
         proto_adj = self._compute_prototype_adjacency(x, prototype)
         adj = prox_adj * proto_adj
-        
+        B, M = adj.shape[:2]
+        adj = torch.diagonal_scatter(adj,  adj.new_ones(B, M), dim1=1, dim2=2)
+
         # Assert the adjacency matrix is symmetric
         # torch.testing.assert_close(adj, adj.permute(0, 2, 1))
+        with torch.no_grad():
+            edge_index, edge_attribute = dense_to_sparse(adj)
+            edge_index, edge_attribute = coalesce(edge_index, edge_attribute,)
 
-        edge_index, edge_attribute = dense_to_sparse(adj)
-        clustered_nodes = cluster_index(edge_index).to(segments.device)
+            clustered_nodes = cluster_index(edge_index.cpu()).to(segments) - 1
+            
+            clustered_nodes = clustered_nodes.view(B, -1)
+            n_segments = segments.amax(dim=(1,2,3))
+            for i, n in enumerate(n_segments):
+                clustered_nodes[i, n:] = 0
+                clustered_nodes[i] = torch.unique(clustered_nodes[i], return_inverse=True)[1]
+            
+            segments = torch.gather(clustered_nodes, -1, segments.flatten(1)).view(segments.shape)
         
-        # B x N, max(clustered_nodes) = n_cluster
-        segments = torch.gather(clustered_nodes, -1, segments.flatten()).view(segments.shape)
-        _ , segments = torch.unique(segments, return_inverse=True) 
-        _, batch_index = reindex_segments_from_batch(segments)
-        Nmax = segments.max() + 1
+        # New max number of segments can be estimated: 
+        
 
         b, N = x.shape[:2]
         # x: B x N x C
         x = adj @ x  # This is pretty much the equivalent of Attn @ V in the original transformer  
         # x: B x N x C
 
-        x = x.view(b*N, -1) # We flatten all the tokens along the batch dimension
-        x = scatter(x, clustered_nodes.unsqueeze(1), dim=0, reduce='mean')
+        x = scatter(x, clustered_nodes, dim=1, reduce='mean')
         # x: (B x Nmax) x C
 
-        x, _ = to_dense_batch(x, batch_index, batch_size=b, max_num_nodes=Nmax)
-        # x: B x Nmax x C
-
+        if self.cls_token is not None:
+            x = torch.cat((cls_token.unsqueeze(1), x), dim=1)
+        
         return x, segments
-
         
     @staticmethod
     def normalize_adjacency(adj: torch.Tensor, normalize: bool = True, binarize = False) -> torch.Tensor:
@@ -212,22 +236,41 @@ class DynViT(nn.Module):
         protos_norm = F.normalize(prototypes, dim=1)
         cosine_sim = x_norm @ protos_norm.t()
         cosine_sim = (cosine_sim + 1) / 2
-        cosine_sim[cosine_sim < 0.15] = 0
+        self.cosine_sim = cosine_sim
+        cosine_sim[cosine_sim < 0.5] = 0
+        self.cosine_sim = cosine_sim
         class_adj = torch.matmul(cosine_sim, cosine_sim.permute(0, 2, 1))
         return self.normalize_adjacency(class_adj, normalize=normalize)
 
-    def _segment_embed(self, x, segment):
-        return x, segment
-    
-    def forward_features(self, x, segment):
-        x, segment = self.segment_embed(x, segment)
-        x = self.norm_pre(x)
-        for d, blk in enumerate(self.blocks):
-            x = blk(x)
-            x, segment = self._resample_sequence(x, segment, d)
-        x = self.norm(x)
+    def _add_class_token(self, x: torch.Tensor) -> torch.Tensor:
+        if self.cls_token is not None:
+            cls_tokens = self.cls_token.expand(x.shape[0], -1, -1)
+            x = torch.cat((cls_tokens, x), dim=1)
         return x
     
+    def forward_features(self, x, segment, compute_attribution=False):
+        x, segment = self.segment_embed(x, segment)
+        x = self._add_class_token(x)
+        x = self.norm_pre(x)
+        proto_index = 0
+        for d, blk in enumerate(self.blocks):
+            x = blk(x)
+            if (d+1) % self.resample_every_n_blocks == 0:
+                x, segment = self._resample_sequence(x, segment, proto_index)
+                proto_index += 1
+        x = self.norm(x)
+        if compute_attribution:
+            attr = self.compute_attribution(segment)
+            return x, attr
+        else:
+            return x
+    
+    def compute_attribution(self, segment):
+        scores = self.cosine_sim.argmax(dim=2)
+        score = torch.gather(scores, 1, segment.flatten(1)).view(segment.shape).squeeze(1) 
+        return score
+
+
     def forward_head(self, x, pre_logits: bool = False):
         if self.global_pool:
             x = x[:, self.num_prefix_tokens:].mean(dim=1) if self.global_pool == 'avg' else x[:, 0]
@@ -236,25 +279,30 @@ class DynViT(nn.Module):
         return x if pre_logits else self.head(x)
 
         
-    def forward(self, x, segment):
+    def forward(self, x, segment, return_attention=False):
         """
         args:
             x: tensor, shape (B, C, H, W)
             segment: tensor, shape (B, H, W)
         """
-        
-        x = self.forward_features(x, segment)
-        x = self.forward_head(x)
-        return x
+        if return_attention:
+            x, attr = self.forward_features(x, segment, compute_attribution=True)
+            x = self.forward_head(x)
+            return x, attr
+        else:
+            x = self.forward_features(x, segment)
+            x = self.forward_head(x)
+            return x
     
     
 if __name__ == '__main__':
 
     model = DynViT(img_size=512, patch_size=16, in_chans=3, num_classes=1000, inter_dim=64,
+                   resample_every_n_blocks=4, depth=12,
                    embed_dim=96).cuda(2)
 
     x = torch.randn(3, 3, 512, 512).cuda(2)
-    segment = torch.arange(0, 16*16).reshape(1, 16, 16).repeat(3, 1, 1).cuda(2)
+    segment = torch.arange(0, 32*32).reshape(1, 32, 32).repeat(3, 1, 1).cuda(2)
     segment = torch.nn.functional.interpolate(segment.float().unsqueeze(1), size=(512, 512), mode='nearest').long().squeeze(1)
-    out = model(x, segment)
-    print(out)
+    out, attr = model(x, segment, True)
+    print(attr.shape)

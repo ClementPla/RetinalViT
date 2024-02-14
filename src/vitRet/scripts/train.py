@@ -8,6 +8,7 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.profilers import AdvancedProfiler
 from vitRet.data.fundus import DDRDataModule, EyePACSDataModule
 from vitRet.my_lightning_module import LogValidationAttentionMap, TrainerModule
 
@@ -37,9 +38,11 @@ def train():
         dirpath=os.path.join("checkpoints", os.environ["WANDB_RUN_NAME"]),
     )
     log_image_callback = LogValidationAttentionMap(wandb_logger, frequency=2)
-    
+    # profiler = AdvancedProfiler(dirpath=".", filename="profiler.txt")
     trainer = Trainer(
         **config["trainer"],
+        # profiler=profiler,
+        # fast_dev_run=4,
         logger=wandb_logger,
         callbacks=[
             checkpoint_callback,

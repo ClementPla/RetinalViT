@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from timm.models.vision_transformer import VisionTransformer
 
+from vitRet.models.prototypes_vit import DynViT
 from vitRet.models.stochastic_attention.stochastic_vit import StochasticVisionTransformer
 from vitRet.utils.ckpts import ModelCkpt, ProjectorCkpt
 
@@ -66,6 +67,8 @@ def load_weights_from_timm(timm_model: VisionTransformer, model: StochasticVisio
         model.projector.pos_embed = torch.nn.Parameter(pos_embed)
     return model
 
+def dyn_vit(num_classes: int, *args, **kwargs):    
+    return DynViT(num_classes=num_classes, *args, **kwargs)
 
 def svt_32_tiny(num_classes: int, *args, pretrained=True, **kwargs):
     model = StochasticVisionTransformer(
@@ -225,7 +228,8 @@ models = {
     "svt_16_large": svt_16_large,
     "svt_custom": svt_custom,
     "svt_retfound": svt_retfound,
-    "svt_16_base_fundus": svt_16_base_fundus
+    "svt_16_base_fundus": svt_16_base_fundus,
+    "dyn_vit": dyn_vit
 }
 
 

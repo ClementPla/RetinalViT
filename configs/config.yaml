@@ -8,31 +8,24 @@ logger:
 data:
   data_dir: /home/tmp/clpla/data/eyepacs/
   img_size: *img_shape
-  batch_size: 16
+  batch_size: 6
   valid_size: 4000
-  num_workers: 15
-  superpixels_max_nb: 8192
-  superpixels_min_nb: 1024
+  num_workers: 4
+  superpixels_min_nb: 2048
   superpixels_scales: *scales
   superpixels_filter_black: True
-  superpixels_num_threads: -1
+  superpixels_num_threads: 1
   superpixels_compactness: 1
   use_superpixels: True
 
 model:
-  first_embedding_dim: 64
-  arch: svt_16_base
+  inter_dim: 256
+  arch: dyn_vit
+  resample_every_n_blocks: 4
+  number_of_prototypes: 16
   img_size: *img_shape
   num_classes: 5
-  max_tokens: 4096
-  scales: *scales
-  projection_stride: 1
-  pretrained: True
-  drop_path: 0.2
-  global_pool: False
-  single_cls_token: True
-  padding: 0
-  detach_input: False
+  global_pool: 'avg'
   
 training:
   lr: 0.001
@@ -44,15 +37,14 @@ training:
     fused: fused
 
 trainer:
-  accumulate_grad_batches: 24
+  accumulate_grad_batches: 48
   strategy: auto
   accelerator: auto
   deterministic: False
   devices: auto
   max_epochs: 1000
   precision: 32
-  # gradient_clip_val: 1.0
-  # gradient_clip_algorithm: norm
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
   check_val_every_n_epoch: 1
   num_sanity_val_steps: 2
-  fast_dev_run: False
