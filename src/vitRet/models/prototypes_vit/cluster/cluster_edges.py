@@ -2,7 +2,8 @@ import torch
 from torch.utils.cpp_extension import load
 from torch_geometric.utils import add_self_loops, dense_to_sparse, sort_edge_index, to_undirected
 
-my_ext = load(name="cluster_cpp", sources=["src/vitRet/models/prototypes_vit/cluster/cluster_cpp.cpp"])
+my_ext = load(name="cluster_cuda", sources=["src/vitRet/models/prototypes_vit/cluster/cluster_cuda.cpp", 
+                                                "src/vitRet/models/prototypes_vit/cluster/cluster_cuda.cu"])
 cluster_index = my_ext.cluster_index
 
 
@@ -22,7 +23,7 @@ if __name__ == '__main__':
         print(segments.max())
         adj = get_superpixels_adjacency(segments)
         fig, axs = plt.subplots(1, 3)
-        axs[0].imshow(segments[1, 0].cpu(), cmap='RdYlGn')
+        axs[0].imshow(segments[0, 0].cpu(), cmap='RdYlGn')
         adj[:, 0, :] = 0
         adj[:, :, 0] = 0
         adj[:,0,0] = 1

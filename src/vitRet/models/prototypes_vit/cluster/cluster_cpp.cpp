@@ -59,7 +59,7 @@ at::Tensor fasterClusterIndex(
             cluster_index.index_put_({nodeA}, current_cluster);
             // We are on a new node, thus a new cluster
             current_cluster++;
-            // Keep track on the current node/cluster wefasterC are working on for now. 
+            // Keep track on the current node/cluster. 
             last_node = nodeA;
         }
         else if ((last_node !=  nodeA).item<bool>()){
