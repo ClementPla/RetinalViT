@@ -3,48 +3,55 @@ define: &img_shape [1024, 1024]
 define: &scales 1
 
 logger:
-  project: StochasticAttention-DiabeticRetinopathy
+  project: SuperProtosTransformer-DiabeticRetinopathy
 
 data:
   data_dir: /home/tmp/clpla/data/eyepacs/
   img_size: *img_shape
-  batch_size: 6
+  batch_size: 11
   valid_size: 4000
-  num_workers: 4
-  superpixels_min_nb: 2048
+  num_workers: 8
+  superpixels_min_nb: 4096
   superpixels_scales: *scales
   superpixels_filter_black: True
   superpixels_num_threads: 1
   superpixels_compactness: 1
+  superpixels_min_size_factor: 0.8
   use_superpixels: True
 
 model:
-  inter_dim: 256
   arch: dyn_vit
-  resample_every_n_blocks: 4
-  number_of_prototypes: 16
+  embedder: cnn
+  embed_dim: 176
+  resample_every_n_blocks: 2
+  depth: 6
+  num_heads: 16
+  number_of_prototypes: 14
   img_size: *img_shape
   num_classes: 5
   global_pool: 'avg'
+  graph_pool: True
+  load_prototypes: True
+  resolution_decay: 0.7
+  use_cosine_similarity: False
+  initial_resolution: 100
   
 training:
-  lr: 0.001
+  lr: 0.01
   as_regression: True
-  pct_start: 0.1
+  layer_decay: 0.1
+
   optimizer:
     betas: [.9, .999]
     weight_decay: 0.00003
-    fused: fused
+  scheduler:
+    eta_min: 0.000001
+
 
 trainer:
-  accumulate_grad_batches: 48
-  strategy: auto
+  accumulate_grad_batches: 4
   accelerator: auto
   deterministic: False
-  devices: auto
-  max_epochs: 1000
-  precision: 32
-  gradient_clip_val: 1.0
-  gradient_clip_algorithm: norm
-  check_val_every_n_epoch: 1
+  max_epochs: 100
   num_sanity_val_steps: 2
+  val_check_interval: 1.0

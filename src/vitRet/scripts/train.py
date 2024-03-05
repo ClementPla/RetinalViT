@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import torch
 from nntools.utils import Config
@@ -8,11 +9,14 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import WandbLogger
+
 from pytorch_lightning.profilers import AdvancedProfiler
 from vitRet.data.fundus import DDRDataModule, EyePACSDataModule
 from vitRet.my_lightning_module import LogValidationAttentionMap, TrainerModule
 
 torch.set_float32_matmul_precision("medium")
+warnings.simplefilter(action="ignore", category=FutureWarning)
+
 
 def train():
     config = Config("configs/config.yaml")
@@ -20,12 +24,13 @@ def train():
 
     datamodule = EyePACSDataModule(**config["data"])
     # ddr_datamodule = DDRDataModule(**config["data"])
-    datamodule.setup('fit')
-    datamodule.setup('validate')
-    datamodule.setup('test')
+    datamodule.setup("fit")
+    datamodule.setup("validate")
+    datamodule.setup("test")
     model = TrainerModule(config["model"], config["training"])
 
-    wandb_logger = WandbLogger(**config["logger"], config=config.tracked_params)
+    wandb_logger = WandbLogger(**config["logger"],
+                               config=config.tracked_params)
     if os.environ.get("LOCAL_RANK", None) is None:
         os.environ["WANDB_RUN_NAME"] = wandb_logger.experiment.name
 
@@ -39,11 +44,12 @@ def train():
     )
     log_image_callback = LogValidationAttentionMap(wandb_logger, frequency=2)
     # profiler = AdvancedProfiler(dirpath=".", filename="profiler.txt")
+    # config["trainer"]["devices"] = 1
     trainer = Trainer(
         **config["trainer"],
         # profiler=profiler,
-        # fast_dev_run=4,
         logger=wandb_logger,
+        # fast_dev_run=6,
         callbacks=[
             checkpoint_callback,
             log_image_callback,
@@ -52,5 +58,11 @@ def train():
         ],
     )
     trainer.fit(model, datamodule=datamodule)
-    trainer.test(model, datamodule=datamodule, ckpt_path="best")
+    trainer.test(
+        model,
+        datamodule=datamodule,
+        ckpt_path="best")
 
+
+if __name__ == "__main__":
+    train()

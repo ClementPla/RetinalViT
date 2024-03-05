@@ -2,11 +2,11 @@
 # All rights reserved.
 # Partly revised by YZ @UCL&Moorfields
 # --------------------------------------------------------
-from vitRet.models.stochastic_attention.stochastic_vit import StochasticVisionTransformer
+from vitRet.models.prototypes_vit import DynViT
 
 
 def param_groups_lrd(
-    model: StochasticVisionTransformer, weight_decay: float = 0.05, no_weight_decay_list=[], layer_decay: float = 0.75
+    model: DynViT, weight_decay: float = 0.05, no_weight_decay_list=[], layer_decay: float = 0.75
 ):
     """
     Parameter groups for layer-wise lr decay
@@ -23,7 +23,8 @@ def param_groups_lrd(
         if not p.requires_grad:
             continue
         # no decay: all 1D parameters and model specific ones
-        if p.ndim == 1 or n in no_weight_decay_list:
+        in_no_weight_decay_list = any(nd in n for nd in no_weight_decay_list)
+        if p.ndim == 1 or in_no_weight_decay_list:
             g_decay = "no_decay"
             this_decay = 0.0
         else:
@@ -57,7 +58,6 @@ def get_layer_id_for_vit(name, num_layers):
     """
     Assign a parameter with its layer id
     Following BEiT: https://github.com/microsoft/unilm/blob/master/beit/optim_factory.py#L33
-    Adapted to follow Stochastisc Vision Transfomer
     """
     if name in ["tokenizer.cls_token", "projector.pos_embed", "tokenizer.cls_pos_embed"]:
         return 0
@@ -67,3 +67,10 @@ def get_layer_id_for_vit(name, num_layers):
         return int(name.split(".")[1]) + 1
     else:
         return num_layers
+
+if __name__ == "__main__":
+    model = DynViT(embedder="segment")
+
+    no_wc = model.no_weight_decay
+    print(no_wc)
+    param_groups_lrd(model, no_weight_decay_list=no_wc)

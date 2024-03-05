@@ -20,7 +20,8 @@ dependencies = [
     "wandb",
     "torchmetrics",
     "torch_scatter",
-    "fast_slic"
+    "fast_slic",
+    "jaxtyping",
 
 ]
 readme = "README.md"

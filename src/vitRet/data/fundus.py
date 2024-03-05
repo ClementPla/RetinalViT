@@ -52,6 +52,7 @@ class FundusDataModule(BaseDataModule):
         superpixels_filter_black=True,
         superpixels_num_threads=1,
         superpixels_compactness=10,
+        superpixels_min_size_factor=0,
     ):
         super(FundusDataModule, self).__init__(
             img_size,
@@ -65,7 +66,8 @@ class FundusDataModule(BaseDataModule):
             superpixels_min_nb=superpixels_min_nb,
             superpixels_filter_black=superpixels_filter_black,
             superpixels_num_threads=superpixels_num_threads,
-            superpixels_compactness=superpixels_compactness
+            superpixels_compactness=superpixels_compactness,
+            superpixels_min_size_factor=superpixels_min_size_factor,
         )
         self.root_img = data_dir
 

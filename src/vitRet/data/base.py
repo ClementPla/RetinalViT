@@ -26,7 +26,8 @@ class BaseDataModule(LightningDataModule):
         superpixels_min_nb=32,
         superpixels_filter_black=True,
         superpixels_num_threads=1,
-        superpixels_compactness=10
+        superpixels_compactness=10,
+        superpixels_min_size_factor=0,
     ):
         super().__init__()
         self.img_size = img_size
@@ -56,7 +57,7 @@ class BaseDataModule(LightningDataModule):
             Slic(
                 num_components=seg_nb,
                 convert_to_lab=True,
-                min_size_factor=0,
+                min_size_factor=superpixels_min_size_factor,
                 manhattan_spatial_dist=False,
                 compactness=superpixels_compactness,
                 num_threads=superpixels_num_threads,

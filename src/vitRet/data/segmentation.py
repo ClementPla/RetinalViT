@@ -38,9 +38,9 @@ def concat_mask(
         microaneurysms,
         neovascularization,
         vessels,
-        red_uncertains,
         optic_cup,
         optic_disc,
+        red_uncertains,
     ]
     label = np.asarray(masks).transpose(1, 2, 0)
     return {"label": label}
@@ -76,6 +76,10 @@ class MaplesDR(LightningDataModule):
         superpixels_nb=2048,
         superpixels_filter_black=True,
         superpixels_num_threads=1,
+        superpixels_convert_to_lab=True,
+        superpixels_manhattan_spatial_dist=False,
+        superpixels_compactness=1,
+        superpixels_min_size_factor=0.1,
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -91,10 +95,10 @@ class MaplesDR(LightningDataModule):
         
         self.slic = Slic(
                 num_components=superpixels_nb,
-                convert_to_lab=True,
-                min_size_factor=0.1,
-                manhattan_spatial_dist=False,
-                compactness=1,
+                convert_to_lab=superpixels_convert_to_lab,
+                min_size_factor=superpixels_min_size_factor,
+                manhattan_spatial_dist=superpixels_manhattan_spatial_dist,
+                compactness=superpixels_compactness,
                 num_threads=superpixels_num_threads,
             )
         
@@ -108,10 +112,10 @@ class MaplesDR(LightningDataModule):
             "macula",
             "microaneurysms",
             "neovascularization",
+            "vessels",
             "optic_cup",
             "optic_disc",
             "red_uncertains",
-            "vessels",
         ]
 
     def setup(self, stage: str) -> None:
