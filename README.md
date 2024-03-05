@@ -15,7 +15,7 @@ This is the repository for the paper ** submitted at MICCAI 2024.
 
 
 
-## Running the code
+# Running the code
 
 ```
 git clone
@@ -35,3 +35,12 @@ We rely on [Fast-SLIC](https://github.com/Algy/fast-slic) to compute the superpi
 We use [RAPIDS cugraph](https://github.com/rapidsai/cugraph/tree/main) for running the Leiden Algorithm. Note that may need to manually install [CUDA](https://developer.nvidia.com/cuda-toolkit).
 
 We rely on [DLPack](https://github.com/dmlc/dlpack) for an efficient transfer of tensors between PyTorch and cugraph (see our [code](src/vitRet/models/prototypes_vit/cluster/cluster.py) for details).
+
+# Datasets
+Here all the datasets used in our paper. Please cite the authors accordingly.
+
+ - [EyePACS](https://www.kaggle.com/c/diabetic-retinopathy-detection/data) (and the [test solution file](https://www.kaggle.com/competitions/diabetic-retinopathy-detection/discussion/16149)).
+ - [Aptos](https://www.kaggle.com/c/aptos2019-blindness-detection/data)
+ - [DDR](https://github.com/nkicsl/DDR-dataset)
+ - [IDRiD](https://ieee-dataport.org/open-access/indian-diabetic-retinopathy-image-dataset-idrid)
+ 
