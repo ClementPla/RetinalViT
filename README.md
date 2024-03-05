@@ -23,8 +23,9 @@ cd RetinalViT
 pip install .
 train
 ```
+All requirements can be found in the [toml file](pyproject.toml).
 
-You will need to adjust the path to the data (EyePACS and APTOS dataset) in the file [config file](configs/config.yaml).
+You will need to adjust the path to the data in the file [config file](configs/config.yaml).
 
 ### Distributed training and Fast SLIC
 
@@ -37,10 +38,9 @@ We use [RAPIDS cugraph](https://github.com/rapidsai/cugraph/tree/main) for runni
 We rely on [DLPack](https://github.com/dmlc/dlpack) for an efficient transfer of tensors between PyTorch and cugraph (see our [code](src/vitRet/models/prototypes_vit/cluster/cluster.py) for details).
 
 # Datasets
-Here all the datasets used in our paper. Please cite the authors accordingly.
+This is the list of datasets used in the paper. Please cite the authors accordingly.
 
  - [EyePACS](https://www.kaggle.com/c/diabetic-retinopathy-detection/data) (and the [test solution file](https://www.kaggle.com/competitions/diabetic-retinopathy-detection/discussion/16149)).
  - [Aptos](https://www.kaggle.com/c/aptos2019-blindness-detection/data)
  - [DDR](https://github.com/nkicsl/DDR-dataset)
  - [IDRiD](https://ieee-dataport.org/open-access/indian-diabetic-retinopathy-image-dataset-idrid)
- 
