@@ -82,17 +82,17 @@ class DynViT(nn.Module):
             prototypes = torch.randn(n_pooling, number_of_prototypes,
                                      embed_dim)
             torch.nn.init.xavier_normal_(prototypes)
-
-        self.pooling_layers = nn.ModuleList([
-            AffinityPooling(
-                index=i,
-                initial_resolution=initial_resolution,
-                resolution_decay=resolution_decay,
-                cosine_clustering=use_cosine_similarity,
-                prototypes=prototypes.clone(),
-                graph_pool=graph_pool,
-            ) for i in range(n_pooling)
-        ])
+        if resample_every_n_blocks > 0:
+            self.pooling_layers = nn.ModuleList([
+                AffinityPooling(
+                    index=i,
+                    initial_resolution=initial_resolution,
+                    resolution_decay=resolution_decay,
+                    cosine_clustering=use_cosine_similarity,
+                    prototypes=prototypes.clone(),
+                    graph_pool=graph_pool,
+                ) for i in range(n_pooling)
+            ])
 
         self.resample_every_n_blocks = resample_every_n_blocks
 
@@ -188,7 +188,7 @@ class DynViT(nn.Module):
         global_align_cost = 0.0
         attrs = []
         for d, blk in enumerate(self.blocks):
-            if (d % self.resample_every_n_blocks) == 0:
+            if (d % self.resample_every_n_blocks) == 0 and self.resample_every_n_blocks>0:
                 x, cls_token = self._separate_cls_token(x)
                 x, new_segment, align_cost, align_mat = self.pooling_layers[pool_index](x, segment)
                 if compute_attribution:
@@ -198,8 +198,11 @@ class DynViT(nn.Module):
                 pool_index += 1
                 global_align_cost = align_cost + global_align_cost
                 x = self._merge_cls_token(x, cls_token)
-
             x = blk(x)
+
+        if self.resample_every_n_blocks<0:
+            attrs = [torch.zeros_like(segment.squeeze(), dtype=torch.uint8)] * d
+            global_align_cost = x.new_zeros(1)
 
         x = self.norm(x)
         if compute_attribution:
@@ -209,7 +212,7 @@ class DynViT(nn.Module):
 
     def compute_attribution(self, segment, align_mat):
         scores = align_mat.argmax(dim=2)
-        score = reconstruct_spatial_map_from_segment(scores, segment)
+        score = reconstruct_spatial_map_from_segment(scores, segment, False)
         return score
 
     def forward_head(self, x, pre_logits: bool = False):

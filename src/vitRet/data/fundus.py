@@ -54,7 +54,7 @@ class FundusDataModule(BaseDataModule):
         superpixels_compactness=10,
         superpixels_min_size_factor=0,
     ):
-        super(FundusDataModule, self).__init__(
+        super().__init__(
             img_size,
             valid_size,
             batch_size,
@@ -121,11 +121,12 @@ class FundusDataModule(BaseDataModule):
             pin_memory=True,
         )
 
-    def test_dataloader(self):
+    def test_dataloader(self, shuffle=False):
         return DataLoader(
             self.test,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            shuffle=shuffle,
             persistent_workers=False,
             pin_memory=True,
         )

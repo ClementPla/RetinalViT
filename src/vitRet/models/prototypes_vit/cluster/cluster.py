@@ -17,15 +17,15 @@ def get_community_cluster(
         adj = normalize_adjacency(adj, normalize=True, binarize=False)
 
     edge_index, edge_attr = dense_to_sparse(adj)
-
     clusters_tensor = get_clusters_from_edges(edge_index, edge_attr, N, B, max_iter, resolution, theta)
+
     if mask_node is not None:
         clusters_tensor = clusters_tensor * mask_node
     clusters_tensor = consecutive_reindex_batch_of_integers_tensor(clusters_tensor)
 
     return clusters_tensor
 
-
+@torch.no_grad()
 def get_clusters_from_edges(edge_index, edge_attr, num_nodes, batch_size, max_iter, resolution, theta):
     edge_index, edge_attr = add_self_loops(edge_index, edge_attr, num_nodes=num_nodes)
 

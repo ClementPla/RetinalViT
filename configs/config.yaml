@@ -11,12 +11,12 @@ data:
   batch_size: 11
   valid_size: 4000
   num_workers: 8
-  superpixels_min_nb: 4096
+  superpixels_min_nb: 2048
   superpixels_scales: *scales
   superpixels_filter_black: True
   superpixels_num_threads: 1
   superpixels_compactness: 1
-  superpixels_min_size_factor: 0.8
+  superpixels_min_size_factor: 0.
   use_superpixels: True
 
 model:
@@ -24,7 +24,7 @@ model:
   embedder: cnn
   embed_dim: 176
   resample_every_n_blocks: 2
-  depth: 6
+  depth: 4
   num_heads: 16
   number_of_prototypes: 14
   img_size: *img_shape
@@ -32,9 +32,10 @@ model:
   global_pool: 'avg'
   graph_pool: True
   load_prototypes: True
-  resolution_decay: 0.7
+  resolution_decay: 0.65
   use_cosine_similarity: False
   initial_resolution: 100
+  class_token: False
   
 training:
   lr: 0.01
@@ -52,6 +53,6 @@ trainer:
   accumulate_grad_batches: 4
   accelerator: auto
   deterministic: False
-  max_epochs: 100
+  max_epochs: 15
   num_sanity_val_steps: 2
   val_check_interval: 1.0

@@ -146,7 +146,7 @@ def normalize_adjacency(adj: torch.Tensor, normalize: bool = True, binarize=Fals
     return adj
 
 
-def reconstruct_spatial_map_from_segment(x, segments):
+def reconstruct_spatial_map_from_segment(x, segments, reindex=True):
     if segments.ndim == 4:
         segments = segments.squeeze(1)
     segments = segments.long()
@@ -156,8 +156,9 @@ def reconstruct_spatial_map_from_segment(x, segments):
     f = x.shape[1]
     segments = segments.unsqueeze(1).expand(-1, f, -1, -1)
     reconstructed_map = torch.gather(x.flatten(2), -1, segments.flatten(2)).view(b, f, h, w).squeeze(1)
-    return consecutive_reindex_batch_of_integers_tensor(reconstructed_map)
-
+    if reindex:
+        return consecutive_reindex_batch_of_integers_tensor(reconstructed_map)
+    return reconstructed_map
 
 def get_superpixels_groundtruth(gt_mask: torch.Tensor,
                                 superpixels_segment: torch.Tensor,
