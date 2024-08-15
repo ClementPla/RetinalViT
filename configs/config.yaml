@@ -1,58 +1,74 @@
-
 define: &img_shape [1024, 1024]
-define: &scales 1
 
 logger:
-  project: SuperProtosTransformer-DiabeticRetinopathy
+  project: SuperProtosTransformer-DiabeticRetinopathy-V2
 
 data:
-  data_dir: /home/tmp/clpla/data/eyepacs/
-  img_size: *img_shape
-  batch_size: 11
-  valid_size: 4000
-  num_workers: 8
-  superpixels_min_nb: 2048
-  superpixels_scales: *scales
-  superpixels_filter_black: True
-  superpixels_num_threads: 1
-  superpixels_compactness: 1
-  superpixels_min_size_factor: 0.
-  use_superpixels: True
+  data_path:
+    eyepacs: /home/clement/Documents/data/eyepacs/
+    # aptos: /home/clement/Documents/data/aptos/
+    # ddr: /home/clement/Documents/data/DDR-dataset/DR_grading/
+    # idrid: /home/clement/Documents/data/IDRID/B. Disease Grading/
+
+  dataset:
+    img_size: *img_shape
+    batch_size: 12
+    valid_size: 0.1
+    num_workers: 8
+    use_cache: True
+    da_type: "heavy"
+    precise_autocrop: True
+  superpixels:
+    n_segments: 4096
+    filter_roi: True
+    compactness: 20
+    min_size: 0.0
+    manhattan_spatial_dist: False
+    convert_to_lab: False
+    num_threads: 1
 
 model:
   arch: dyn_vit
-  embedder: cnn
-  embed_dim: 176
-  resample_every_n_blocks: 2
-  depth: 4
+  embedder: SEGMENT_SCATTER
+  resample_every_n_blocks: 4
+  depth: 8
   num_heads: 16
-  number_of_prototypes: 14
+  number_of_prototypes: 12
+  f_index: -1
   img_size: *img_shape
   num_classes: 5
-  global_pool: 'avg'
+  global_pool: "token"
   graph_pool: True
-  load_prototypes: True
+  load_prototypes: False
   resolution_decay: 0.65
   use_cosine_similarity: False
-  initial_resolution: 100
-  class_token: False
-  
+  initial_resolution: 150
+  class_token: True
+  embedder_requires_grad: True
+  hub_model: ClementP/FundusDRGrading-mobilenetv3_small_100
+  # embed_dim: 768
+  cluster_algorithm: leiden
+  downsample_segments: True
+  minimum_segment_size: 16
+  # pretrained: vit_small_patch14_dinov2
+
 training:
-  lr: 0.01
+  lr: 0.00005
   as_regression: True
-  layer_decay: 0.1
+  layer_decay: 0.95
 
   optimizer:
     betas: [.9, .999]
     weight_decay: 0.00003
   scheduler:
-    eta_min: 0.000001
-
+    eta_min: 0.0000001
 
 trainer:
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 1
   accelerator: auto
-  deterministic: False
-  max_epochs: 15
+  max_epochs: 1
   num_sanity_val_steps: 2
   val_check_interval: 1.0
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: value
+  devices: [0, 1]

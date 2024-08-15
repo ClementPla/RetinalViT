@@ -10,6 +10,7 @@ from fast_slic.avx2 import SlicAvx2 as Slic
 from nntools.dataset import nntools_wrapper
 from pytorch_lightning import LightningDataModule
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+from timm.models.layers import to_2tuple
 
 
 class BaseDataModule(LightningDataModule):
@@ -17,11 +18,11 @@ class BaseDataModule(LightningDataModule):
         self,
         img_size=(512, 512),
         valid_size=0.1,
-        batch_size=64,
-        num_workers=32,
+        batch_size=16,
+        num_workers=8,
         use_cache=False,
         use_superpixels=True,
-        superpixels_scales=4,
+        superpixels_scales=1,
         superpixels_max_nb=2048,
         superpixels_min_nb=32,
         superpixels_filter_black=True,
@@ -30,7 +31,7 @@ class BaseDataModule(LightningDataModule):
         superpixels_min_size_factor=0,
     ):
         super().__init__()
-        self.img_size = img_size
+        self.img_size = to_2tuple(img_size)
         self.valid_size = valid_size
         self.batch_size = batch_size
         self.train = self.val = self.test = None
@@ -58,7 +59,7 @@ class BaseDataModule(LightningDataModule):
                 num_components=seg_nb,
                 convert_to_lab=True,
                 min_size_factor=superpixels_min_size_factor,
-                manhattan_spatial_dist=False,
+                manhattan_spatial_dist=True,
                 compactness=superpixels_compactness,
                 num_threads=superpixels_num_threads,
             )
@@ -110,7 +111,7 @@ class BaseDataModule(LightningDataModule):
         @nntools_wrapper
         def get_superpixels(image, mask=None):
             output = {"image": image}
-            image = cv2.medianBlur(image, 9)
+            image = cv2.bilateralFilter(image, 9, 75, 75)
             list_segments = [slic.iterate(image) for slic in self.slics]
             segments = np.stack(list_segments, axis=-1)
             if mask is not None:
@@ -118,16 +119,6 @@ class BaseDataModule(LightningDataModule):
                     segments = np.expand_dims(mask, 2) * segments
                 output["mask"] = mask
             output["segments"] = segments.astype(int)
-            return output
-        
-        @nntools_wrapper
-        def get_debug_superpixels(image, mask=None):
-            output = {"image": image}
-            h, w = image.shape[:2]
-            segments = np.arange(0, 4096).reshape((64, 64))
-            segments = cv2.resize(segments, (h, w), interpolation=cv2.INTER_NEAREST)
-            output["segments"] = np.expand_dims(segments.astype(int), 2)
-            output['mask'] = mask
             return output
 
         return get_superpixels

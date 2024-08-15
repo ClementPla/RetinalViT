@@ -2,11 +2,15 @@
 # All rights reserved.
 # Partly revised by YZ @UCL&Moorfields
 # --------------------------------------------------------
-from vitRet.models.prototypes_vit import DynViT
+from vitRet.models.super_vit.dyna_vit import DynViT
 
 
 def param_groups_lrd(
-    model: DynViT, weight_decay: float = 0.05, no_weight_decay_list=[], layer_decay: float = 0.75
+    model: DynViT,
+    initial_lr: float,
+    weight_decay: float = 0.05,
+    no_weight_decay_list=[],
+    layer_decay: float = 0.75,
 ):
     """
     Parameter groups for layer-wise lr decay
@@ -24,7 +28,7 @@ def param_groups_lrd(
             continue
         # no decay: all 1D parameters and model specific ones
         in_no_weight_decay_list = any(nd in n for nd in no_weight_decay_list)
-        if p.ndim == 1 or in_no_weight_decay_list:
+        if p.squeeze().ndim == 1 or in_no_weight_decay_list:
             g_decay = "no_decay"
             this_decay = 0.0
         else:
@@ -34,21 +38,15 @@ def param_groups_lrd(
         layer_id = get_layer_id_for_vit(n, num_layers)
         group_name = "layer_%d_%s" % (layer_id, g_decay)
 
-        if group_name not in param_group_names:
+        if group_name not in param_groups:
             this_scale = layer_scales[layer_id]
 
-            param_group_names[group_name] = {
-                "lr_scale": this_scale,
-                "weight_decay": this_decay,
-                "params": [],
-            }
             param_groups[group_name] = {
-                "lr_scale": this_scale,
+                "lr": initial_lr * this_scale,
                 "weight_decay": this_decay,
                 "params": [],
             }
 
-        param_group_names[group_name]["params"].append(n)
         param_groups[group_name]["params"].append(p)
 
     return list(param_groups.values())
@@ -67,6 +65,7 @@ def get_layer_id_for_vit(name, num_layers):
         return int(name.split(".")[1]) + 1
     else:
         return num_layers
+
 
 if __name__ == "__main__":
     model = DynViT(embedder="segment")

@@ -21,7 +21,10 @@ dependencies = [
     "torchmetrics",
     "torch_scatter",
     "fast_slic",
+    "fundus_data_toolkit @ git+https://github.com/ClementPla/fundus-data-toolkit",
     "jaxtyping",
+    "einops",
+    "kornia"
 
 ]
 readme = "README.md"

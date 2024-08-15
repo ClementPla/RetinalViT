@@ -2,8 +2,8 @@ import torch
 import torch.nn.functional as F
 from pytorch_lightning import Trainer, seed_everything
 from vitRet.data.fundus import AptosDataModule, EyePACSDataModule
-from vitRet.my_lightning_module import TrainerModule
 from vitRet.utils.ckpts import ModelCkpt, ProjectorCkpt
+from vitRet.vit_pl_training_module import TrainerModule
 
 torch.set_float32_matmul_precision("high")
 
@@ -40,30 +40,32 @@ def get_model(ckpt_path, **kwargs):
     model = TrainerModule(**kwargs)
     state_dict = torch.load(ckpt_path, map_location="cpu")["state_dict"]
     pos_embed = state_dict["model.projector.pos_embed"]
-    state_dict["model.projector.pos_embed"] = F.interpolate(pos_embed, 
-                                                            size=model.model.projector.pos_embed.shape[-2:], 
-                                                            mode="bilinear")
+    state_dict["model.projector.pos_embed"] = F.interpolate(
+        pos_embed, size=model.model.projector.pos_embed.shape[-2:], mode="bilinear"
+    )
     model.load_state_dict(state_dict=state_dict, strict=True)
     return model
+
 
 def compressed_embedded_model(ckpt_path, **kwargs):
     model = TrainerModule(**kwargs)
     state_dict = torch.load(ckpt_path, map_location="cpu")["state_dict"]
     projector_path = ProjectorCkpt.DEPTH_32
-    projector_dict = torch.load(projector_path, map_location='cpu')["state_dict"]
+    projector_dict = torch.load(projector_path, map_location="cpu")["state_dict"]
     only_projector = {}
     for k, v in projector_dict.items():
-        if k.startswith('trained_projector.'):
-            only_projector[k.replace('trained_projector', 'model')] = v
-    state_dict.update(only_projector)        
+        if k.startswith("trained_projector."):
+            only_projector[k.replace("trained_projector", "model")] = v
+    state_dict.update(only_projector)
     pos_embed = state_dict["model.projector.pos_embed"]
-    state_dict["model.projector.pos_embed"] = F.interpolate(pos_embed, 
-                                                            size=model.model.projector.pos_embed.shape[-2:], 
-                                                            mode="bilinear")
-    
+    state_dict["model.projector.pos_embed"] = F.interpolate(
+        pos_embed, size=model.model.projector.pos_embed.shape[-2:], mode="bilinear"
+    )
+
     inc_keys = model.load_state_dict(state_dict=state_dict, strict=True)
     print(inc_keys)
     return model
+
 
 def test():
     seed_everything(1234, workers=True)
@@ -72,7 +74,7 @@ def test():
     ntokens = 4096
     datamodule = get_datamodule(img_size, scales, ntokens, aptos=True, batch_size=16)
 
-    ckpt_path = 'checkpoints/efficient-wood-282/epoch=3-step=2596.ckpt'
+    ckpt_path = "checkpoints/efficient-wood-282/epoch=3-step=2596.ckpt"
     network_config = {
         "arch": "svt_16_base",
         "img_size": img_size,
@@ -103,8 +105,6 @@ def test():
         "confMat": confMat,
     }
     torch.save(save_dict, f"results/scores_{ntokens}_res{img_size[0]}.pt")
-
-
 
 
 if __name__ == "__main__":
