@@ -8,30 +8,30 @@
     CHECK_CUDA(x);     \
     CHECK_CONTIGUOUS(x)
 
-torch::Tensor superpixels_scatter_sum_cuda(const torch::Tensor features, const torch::Tensor superpixels);
+torch::Tensor superpixels_scatter_nearest_cuda(const torch::Tensor features, const torch::Tensor superpixels, const std::string &reduce,
+                                               const bool &autobroadcast);
 
-torch::Tensor superpixels_scatter_mean_cuda(const torch::Tensor features, const torch::Tensor superpixels);
+torch::Tensor superpixels_scatter_bilinear_cuda(const torch::Tensor features, const torch::Tensor superpixels, const std::string &reduce, const bool &autobroadcast);
 
-torch::Tensor superpixels_scatter(const torch::Tensor features, const torch::Tensor superpixels, const std::string &reduce)
+torch::Tensor superpixels_scatter(const torch::Tensor features, const torch::Tensor superpixels, const std::string &reduce, const std::string &mode, const bool &autobroadcast)
 {
     TORCH_CHECK(features.dim() == 4, "features must be a 4D tensor");
     TORCH_CHECK(superpixels.dim() == 3, "superpixels must be a 3D tensor");
-    TORCH_CHECK(features.size(0) == superpixels.size(0), "Batch sizes must match");
+    TORCH_CHECK((features.size(0) == superpixels.size(0)) || ((features.size(0) == 1) || (superpixels.size(0) == 1) && autobroadcast), "Batch sizes must match or ones of the batch size must be 1");
     CHECK_INPUT(features);
     CHECK_INPUT(superpixels);
     auto superpixelsInt = superpixels.to(torch::kInt);
 
-    if (reduce == "sum")
+    if (mode == "nearest")
     {
-        return superpixels_scatter_sum_cuda(features, superpixelsInt);
+        return superpixels_scatter_nearest_cuda(features, superpixelsInt, reduce, autobroadcast);
     }
-    else if (reduce == "mean")
+    else if (mode == "bilinear")
     {
-        return superpixels_scatter_mean_cuda(features, superpixelsInt);
+        return superpixels_scatter_bilinear_cuda(features, superpixelsInt, reduce, autobroadcast);
     }
-    else
     {
-        TORCH_CHECK(false, "Unsupported reduction operation. Use 'sum' or 'mean'.");
+        TORCH_CHECK(false, "Unsupported mode. Use 'nearest' or 'bilinear'.")
     }
 }
 

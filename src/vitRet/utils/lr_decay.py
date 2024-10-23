@@ -16,7 +16,6 @@ def param_groups_lrd(
     Parameter groups for layer-wise lr decay
     Following BEiT: https://github.com/microsoft/unilm/blob/master/beit/optim_factory.py#L58
     """
-    param_group_names = {}
     param_groups = {}
 
     num_layers = len(model.blocks) + 1
@@ -26,6 +25,18 @@ def param_groups_lrd(
     for n, p in model.named_parameters():
         if not p.requires_grad:
             continue
+
+        if "prototypes" in n and "prototypes" not in param_groups:
+            param_groups["prototypes"] = {
+                "lr": initial_lr,
+                "weight_decay": 0.0,
+                "params": [],
+            }
+
+        if "prototypes" in n:
+            param_groups["prototypes"]["params"].append(p)
+            continue
+
         # no decay: all 1D parameters and model specific ones
         in_no_weight_decay_list = any(nd in n for nd in no_weight_decay_list)
         if p.squeeze().ndim == 1 or in_no_weight_decay_list:

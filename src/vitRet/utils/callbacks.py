@@ -1,4 +1,5 @@
 import pytorch_lightning as pl
+import torch
 from kornia.morphology import gradient
 from pytorch_lightning.utilities import rank_zero_only
 from torch.nn import functional as F
@@ -7,10 +8,11 @@ import wandb
 
 
 class LogValidationAttentionMap(pl.Callback):
-    def __init__(self, wandb_logger, n_images=8, frequency=2):
+    def __init__(self, wandb_logger, n_images=8, frequency=2, n_classes=12):
         self.n_images = n_images
         self.wandb_logger = wandb_logger
         self.frequency = frequency
+        self.n_classes = n_classes
         super().__init__()
 
     @rank_zero_only
@@ -35,27 +37,35 @@ class LogValidationAttentionMap(pl.Callback):
 
             attn = [a[:n] for a in outputs["attn"]]
 
-            attn = [
-                F.interpolate(a.unsqueeze(1), size=x.shape[-2:], mode="nearest").squeeze(1).cpu().numpy() for a in attn
-            ]
+            attn = [F.interpolate(a.unsqueeze(1), size=x.shape[-2:], mode="nearest") for a in attn]
+            attn = [torch.clamp(torch.nan_to_num(a), 0, self.n_classes).squeeze(1).long().cpu().numpy() for a in attn]
 
             pred = outputs["pred"][:n]
             gt = outputs["gt"][:n]
             columns = ["image", "prediction", "groundtruth"]
 
             def get_prediction_dict(batch_idx):
-                return {f"Prediction scale {i}": {"mask_data": attn[i][batch_idx]} for i in range(len(attn))}
+                return {
+                    f"Prediction scale {i}": {
+                        "mask_data": attn[i][batch_idx],
+                        "class_labels": {j: f"Class {j}" for j in range(self.n_classes)},
+                    }
+                    for i in range(len(attn))
+                }
 
             data = [
                 [
                     wandb.Image(
                         x[i],
                         masks={
-                            "Last superpixels": {
+                            "Last segments": {
                                 "mask_data": last_border[i],
-                                "class_labels": {1: "border", 0: "non-border"},
+                                "class_labels": {j: f"Class {j}" for j in [0, 1]},
                             },
-                            "Superpixels": {"mask_data": border[i], "class_labels": {1: "border", 0: "non-border"}},
+                            "First segments": {
+                                "mask_data": border[i],
+                                "class_labels": {0: "Not Border", 1: "Border"},
+                            },
                             **get_prediction_dict(i),
                         },
                     ),

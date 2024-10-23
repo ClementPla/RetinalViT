@@ -75,11 +75,17 @@ class DynViT(nn.Module):
         concat_positional_embedding: bool = False,
         hub_model="ClementP/FundusDRGrading-mobilenetv3_small_100",
         minimum_segment_size: int = 0,
+        tau: float = 1,
+        cat_input: bool = False,
+        use_kmeans: bool = False,
+        optimized: bool = True,
     ) -> None:
         super().__init__()
         assert global_pool in ("", "avg", "token")
         assert class_token or global_pool != "token"
 
+        self.use_kmeans = use_kmeans
+        self.hub_model = hub_model
         self.segment_embed = FeaturesExtractor(
             model_type=embedder,
             f_index=f_index,
@@ -98,12 +104,14 @@ class DynViT(nn.Module):
             include_texture_descriptor=include_texture_descriptor,
             concat_positional_embedding=concat_positional_embedding,
             minimum_segment_size=minimum_segment_size,
+            cat_input=cat_input,
+            optimized=optimized,
         )
         embed_dim = self.segment_embed.embed_size
         self.segment_embed.requires_grad_(embedder_requires_grad)
         n_pooling = depth // resample_every_n_blocks
         self.resample_every_n_blocks = resample_every_n_blocks
-
+        self.pooling_layers = None
         if resample_every_n_blocks > 0:
             self.setup_pooling_layers(
                 n_pooling=n_pooling,
@@ -115,6 +123,8 @@ class DynViT(nn.Module):
                 use_cosine_similarity=use_cosine_similarity,
                 graph_pool=graph_pool,
                 cluster_algorithm=cluster_algorithm,
+                tau=tau,
+                use_kmeans=use_kmeans,
             )
 
         self.embed_dim = embed_dim
@@ -168,16 +178,25 @@ class DynViT(nn.Module):
         use_cosine_similarity,
         graph_pool,
         cluster_algorithm,
+        tau,
+        use_kmeans,
     ):
         if load_prototypes:
             print("Loading prototypes")
-            prototypes = torch.load("checkpoints/prototypes/prototypes.ckpt", map_location="cpu").permute(0, 2, 1)
+            path = load_prototypes.replace(
+                "placeholder", self.hub_model.replace("hf_hub:ClementP/FundusDRGrading-", "")
+            )
+            try:
+                prototypes = torch.load(path).permute(0, 2, 1).contiguous()
+            except FileNotFoundError:
+                print(f"Prototypes not found at {path}")
+                prototypes = torch.randn(n_pooling, number_of_prototypes, embed_dim)
+                torch.nn.init.xavier_uniform_(prototypes)
             # (number_of_prototypes, embed_dim)
             print("Prototypes shape:", prototypes.shape)
         else:
-            prototypes = torch.randn(1, number_of_prototypes, embed_dim)
-            # torch.nn.init.xavier_normal_(prototypes)
-
+            prototypes = torch.randn(n_pooling, number_of_prototypes, embed_dim)
+            torch.nn.init.xavier_uniform_(prototypes)
         self.pooling_layers = nn.ModuleList(
             [
                 AffinityPooling(
@@ -185,13 +204,22 @@ class DynViT(nn.Module):
                     initial_resolution=initial_resolution,
                     resolution_decay=resolution_decay,
                     cosine_clustering=use_cosine_similarity,
-                    prototypes=prototypes.clone(),  # We clone to prevent using the same prototypes for all layers
+                    prototypes=prototypes[i].unsqueeze(0),
                     graph_pool=graph_pool,
                     cluster_algoritm=cluster_algorithm,
+                    tau=tau,
+                    use_kmeans=use_kmeans,
                 )
                 for i in range(n_pooling)
             ]
         )
+
+    def set_update_kmeans(self, update_kmeans: bool):
+        if not self.pooling_layers:
+            return
+
+        for layer in self.pooling_layers:
+            layer.update_kmeans = update_kmeans
 
     def setup_not_pretrained(
         self,
@@ -250,7 +278,7 @@ class DynViT(nn.Module):
         self.fc_norm = norm_layer(embed_dim) if use_fc_norm else nn.Identity()
         self.head_drop = nn.Dropout(drop_rate)
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
-        self.init_weights()
+        # self.init_weights()
 
     @property
     def no_weight_decay(self):
@@ -291,21 +319,21 @@ class DynViT(nn.Module):
         for d, blk in enumerate(self.blocks):
             if (d % self.resample_every_n_blocks) == 0 and self.resample_every_n_blocks > 0:
                 x, cls_token = self._separate_cls_token(x)
-                segments.append(segment)
-                x, new_segment, align_cost, align_mat = self.pooling_layers[pool_index](x, segment)
-                if compute_attribution:
-                    attr = self.compute_attribution(segment, align_mat)
-                    attrs.append(attr)
-                segment = new_segment
-                pool_index += 1
-                global_align_cost = align_cost + global_align_cost
+                if pool_index < len(self.pooling_layers):
+                    segments.append(segment)
+                    x, new_segment, align_cost, align_mat = self.pooling_layers[pool_index](x, segment)
+                    if compute_attribution:
+                        attr = self.compute_attribution(segment, align_mat)
+                        attrs.append(attr)
+                    segment = new_segment
+                    pool_index += 1
+                    global_align_cost = align_cost + global_align_cost
                 x = self._merge_cls_token(x, cls_token)
 
             x = blk(x)
 
         if self.resample_every_n_blocks < 0:
-            attrs = [torch.zeros_like(segment.squeeze(), dtype=torch.uint8)] * d
-            global_align_cost = x.new_zeros(1)
+            attrs = [torch.zeros_like(segment.squeeze(), dtype=torch.uint8)] * 2
 
         x = self.norm(x)
         if segment.ndim == 3:
@@ -320,7 +348,7 @@ class DynViT(nn.Module):
 
         if segment.shape[-2:] != (h, w):
             segment = F.interpolate(segment.float(), size=(h, w), mode="nearest").long()
-        output = [x, segment, global_align_cost / (max(pool_index, 1))]
+        output = [x, segment, global_align_cost / len(self.pooling_layers)]
         if compute_attribution:
             attrs = [
                 F.interpolate(a.unsqueeze(1).float(), size=(h, w), mode="nearest").long().squeeze(1) for a in attrs
@@ -332,8 +360,8 @@ class DynViT(nn.Module):
         return tuple(output)
 
     def compute_attribution(self, segment, align_mat):
-        scores = align_mat.argmax(dim=2)
-        score = reconstruct_spatial_map_from_segment(scores, segment, False)
+        scores = align_mat.argmax(dim=-1)
+        score = reconstruct_spatial_map_from_segment(scores, segment, True)
         return score
 
     def forward_head(self, x, pre_logits: bool = False):
@@ -356,23 +384,20 @@ class DynViT(nn.Module):
         else:
             return x, segment, align_cost
 
+    @property
+    def tau(self):
+        return self.pooling_layers[0].tau
 
-if __name__ == "__main__":
-    model = DynViT(
-        img_size=1024,
-        in_chans=3,
-        num_classes=1000,
-        resample_every_n_blocks=4,
-        depth=12,
-        load_prototypes=False,
-        embed_dim=176,
-        num_heads=8,
-        embedder="cnn",
-        pretrained="vit_base_patch16_384",
-    ).cuda(0)
+    @tau.setter
+    def tau(self, tau: float):
+        for layer in self.pooling_layers:
+            layer.tau = tau
 
-    # x = torch.randn(3, 3, 1024, 1024).cuda(0)
-    # segment = torch.arange(0, 32*32).reshape(1, 32, 32).repeat(3, 1, 1).cuda(0)
-    # segment = torch.nn.functional.interpolate(segment.float().unsqueeze(1), size=(1024, 1024), mode='nearest').long().squeeze(1)
-    # out, cost, attr = model(x, segment, True)
-    # print(attr.shape)
+    @property
+    def graph_pool(self):
+        return self.pooling_layers[0].graph_pool
+
+    @graph_pool.setter
+    def graph_pool(self, graph_pool: bool):
+        for layer in self.pooling_layers:
+            layer.graph_pool = graph_pool

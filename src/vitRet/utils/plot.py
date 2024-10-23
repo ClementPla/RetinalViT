@@ -65,6 +65,7 @@ def imshow(
             heatmap = heatmap.squeeze()
             heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
         heatmap = heatmap > threshold if binarize_heatmap else heatmap
+        heatmap = heatmap.cpu()
         ax.imshow(
             heatmap,
             cmap=cmap,
@@ -78,9 +79,17 @@ def imshow(
 
         if show_segment_id:
             x_segment, y_segment = get_segments_centroids(segment.long())
-            for x, y in zip(x_segment[0], y_segment[0]):
-                n = segment[0, y, x].item()
-                ax.text(x.item(), y.item(), str(n), fontsize=font_size, color="white", ha="center", va="center")
+            for n, (x, y) in enumerate(zip(x_segment[0], y_segment[0])):
+                # n = segment[0, y, x].item()
+                ax.text(
+                    x.item(),
+                    y.item(),
+                    str(n),
+                    fontsize=font_size,
+                    color="white",
+                    ha="center",
+                    va="center",
+                )
 
         if segment.dim() == 3:
             segment = segment.unsqueeze(0)

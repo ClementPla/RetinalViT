@@ -1,4 +1,3 @@
-import cv2
 from fast_slic.avx2 import SlicAvx2 as Slic
 from fundus_data_toolkit.data_aug import DAType
 from fundus_data_toolkit.datamodules import CLASSIF_PATHS, DataHookPosition
@@ -10,6 +9,11 @@ from fundus_data_toolkit.datamodules.classification import (
 )
 from fundus_data_toolkit.datamodules.utils import merge_existing_datamodules
 from nntools.dataset import nntools_wrapper
+
+
+def verify_data(data):
+    segments = data["segments"]
+    assert segments.max() > 0, "No segments found"
 
 
 def get_datamodules(dataset_paths: dict, dataset_module_args: dict, superpixels_args: dict):
@@ -26,6 +30,8 @@ def get_datamodules(dataset_paths: dict, dataset_module_args: dict, superpixels_
     print(f"Superpixels: {n_segments} segments, compactness: {compactness}, min_size: {min_size}")
     da_type = dataset_module_args.pop("da_type", DAType.DEFAULT)
     da_type = DAType(da_type)
+
+    dataset_module_args["callbacks"] = [verify_data]
 
     cache_dir = f"supepixels_{n_segments}_{compactness}_filter_{filter_roi}"
 
@@ -55,7 +61,6 @@ def get_datamodules(dataset_paths: dict, dataset_module_args: dict, superpixels_
                         data_dir=v, cache_dir=cache_dir, data_augmentation_type=da_type, **dataset_module_args
                     )
                 )
-
     datamodule = merge_existing_datamodules(ds)
 
     slic = Slic(
@@ -71,7 +76,13 @@ def get_datamodules(dataset_paths: dict, dataset_module_args: dict, superpixels_
     def get_superpixels(image, roi=None):
         output = {"image": image}
         # image = cv2.bilateralFilter(image, 9, 75, 75)
-        segments = slic.iterate(image)
+
+        # segments = felzenszwalb(image, scale=10, sigma=0.5, min_size=15)
+
+        # gradient = sobel(rgb2gray(image))
+        # segments = watershed(gradient, markers=4096, compactness=1e-7)
+        # segments = quickshift(image, kernel_size=3, max_dist=6, ratio=0.5)
+        segments = slic.iterate(image, 50)
         if filter_roi:
             segments = roi.astype(segments.dtype) * segments
             output["mask"] = roi
@@ -88,8 +99,14 @@ def get_dm_from_config(config: dict):
     return get_datamodules(config["data"]["data_path"], config["data"]["dataset"], config["data"]["superpixels"])
 
 
-def get_test_sample(batch_size=8, img_size=(1024, 1024), **kwargs):
-    paths = {"IDRID": CLASSIF_PATHS.IDRID, "APTOS": CLASSIF_PATHS.APTOS}
+def get_test_sample(batch_size=8, img_size=(1024, 1024), shuffle=False, dataloader_idx=0, **kwargs):
+    paths = {
+        "IDRID": CLASSIF_PATHS.IDRID,
+        "APTOS": CLASSIF_PATHS.APTOS,
+        "EYEPACS": CLASSIF_PATHS.EYEPACS,
+        "DDR": CLASSIF_PATHS.DDR,
+        "APTOS": CLASSIF_PATHS.APTOS,
+    }
     dataset_args = {
         "batch_size": batch_size,
         "da_type": "heavy",
@@ -99,7 +116,7 @@ def get_test_sample(batch_size=8, img_size=(1024, 1024), **kwargs):
     }
 
     superpixels_args = {
-        "n_segments": 256,
+        "n_segments": 4096,
         "min_size": 0,
         "compactness": 10,
         "roi_filter": True,
@@ -109,5 +126,5 @@ def get_test_sample(batch_size=8, img_size=(1024, 1024), **kwargs):
     superpixels_args.update(kwargs)
 
     datamodule = get_datamodules(paths, dataset_args, superpixels_args)
-    dataloader = datamodule.train_dataloader()
+    dataloader = datamodule.test_dataloader(shuffle=shuffle)[dataloader_idx]
     return next(iter(dataloader))

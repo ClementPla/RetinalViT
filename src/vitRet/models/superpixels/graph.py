@@ -13,7 +13,7 @@ def normalize_adjacency(adj: torch.Tensor, normalize: bool = True, binarize=Fals
         return (adj > 0).float()
 
     if normalize:
-        degree = adj.sum(dim=2, keepdim=False)
+        degree = adj.sum(dim=2, keepdim=False) + 1e-7
         degree = degree.pow(-0.5)
         degree[degree == float("inf")] = 0
         diag = torch.zeros_like(adj)

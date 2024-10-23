@@ -32,6 +32,7 @@ class FeaturesExtractor(nn.Module):
         block_size=(512, 512),
         block_stride=(512, 512),
         downsample_segments=False,
+        cat_input=False,
         radius: int = 0.1,
         out_dim=256,
         eps=1e-6,
@@ -40,6 +41,8 @@ class FeaturesExtractor(nn.Module):
         concat_positional_embedding=False,
         isolate_superpixels=False,
         minimum_segment_size=0,
+        optimized=True,
+        kernel_size=16,
         **kwargs,
     ):
         super().__init__()
@@ -48,7 +51,7 @@ class FeaturesExtractor(nn.Module):
             case AvailableExtractor.SEGMENT_EMBEDDING:
                 from vitRet.models.features.segment_embedding import SegmentEmbed
 
-                self.extractor = SegmentEmbed(in_chans, n_conv_stem, inter_dim, embed_dim, img_size)
+                self.extractor = SegmentEmbed(in_chans, n_conv_stem, inter_dim, embed_dim, kernel_size=kernel_size)
             case AvailableExtractor.DINO_SEGMENT_EMBEDDING:
                 from vitRet.models.features.dino import DinoSegmentEmbedding
 
@@ -78,15 +81,20 @@ class FeaturesExtractor(nn.Module):
             case AvailableExtractor.SEGMENT_SCATTER:
                 from vitRet.models.features.cnn import SegmentScatteringCNN
 
-                self.extractor = SegmentScatteringCNN(hub_model, f_index, output_features=embed_dim)
+                self.extractor = SegmentScatteringCNN(
+                    hub_model, f_index, output_features=embed_dim, cat_input=cat_input, optimized=optimized
+                )
             case _:
                 raise ValueError(f"Unknown model type: {model_type}")
 
-    def forward(self, x, segment):
+    def init_weights(self):
+        pass
+
+    def forward(self, x, segment, *args, **kwargs):
         if self.minimum_segment_size:
             segment = filter_small_segments(segment.long(), self.minimum_segment_size).long()
 
-        return self.extractor(x, segment)
+        return self.extractor(x, segment, *args, **kwargs)
 
     @property
     def embed_size(self):

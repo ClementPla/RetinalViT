@@ -1,7 +1,7 @@
 [project]
 name = "ViTRetinalClassification"
 version = "0.1.0"
-description = "Interpretable Retinal Classification using the RetFound model"
+description = "Interpretable Retinal Classification with Superpixels ViT"
 dependencies = [
     "albumentations",
     "torch",
@@ -24,8 +24,8 @@ dependencies = [
     "fundus_data_toolkit @ git+https://github.com/ClementPla/fundus-data-toolkit",
     "jaxtyping",
     "einops",
-    "kornia"
-
+    "kornia",
+    "torch-kmeans"
 ]
 readme = "README.md"
 

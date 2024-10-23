@@ -1,60 +1,68 @@
 define: &img_shape [1024, 1024]
 
 logger:
-  project: SuperProtosTransformer-DiabeticRetinopathy-V2
+  project: SuperProtosTransformer-DiabeticRetinopathy-V3
 
 data:
   data_path:
-    eyepacs: /home/clement/Documents/data/eyepacs/
+    # eyepacs: /home/clement/Documents/data/eyepacs/
     # aptos: /home/clement/Documents/data/aptos/
     # ddr: /home/clement/Documents/data/DDR-dataset/DR_grading/
-    # idrid: /home/clement/Documents/data/IDRID/B. Disease Grading/
+    idrid: /home/clement/Documents/data/IDRID/B. Disease Grading/
 
   dataset:
     img_size: *img_shape
-    batch_size: 12
+    batch_size: 24
     valid_size: 0.1
     num_workers: 8
-    use_cache: True
-    da_type: "heavy"
+    use_cache: False
+    da_type: heavy
     precise_autocrop: True
   superpixels:
     n_segments: 4096
     filter_roi: True
-    compactness: 20
+    compactness: 1
     min_size: 0.0
-    manhattan_spatial_dist: False
-    convert_to_lab: False
+    manhattan_spatial_dist: True
+    convert_to_lab: True
     num_threads: 1
 
 model:
   arch: dyn_vit
-  embedder: SEGMENT_SCATTER
-  resample_every_n_blocks: 4
-  depth: 8
+  embedder: SEGMENT_EMBEDDING
+  resample_every_n_blocks: 2
+  depth: 6
   num_heads: 16
   number_of_prototypes: 12
-  f_index: -1
+  f_index: 3
   img_size: *img_shape
   num_classes: 5
   global_pool: "token"
-  graph_pool: True
-  load_prototypes: False
-  resolution_decay: 0.65
+  resolution_decay: 0.95
   use_cosine_similarity: False
-  initial_resolution: 150
+  initial_resolution: 250
   class_token: True
   embedder_requires_grad: True
-  hub_model: ClementP/FundusDRGrading-mobilenetv3_small_100
-  # embed_dim: 768
+  # hub_model: hf_hub:ClementP/FundusDRGrading-tf_efficientnet_b5
+  # hub_model: mobilenetv4_conv_small.e2400_r224_in1k
+  # embed_dim: 96
+  embed_dim: 176
+  inter_dim: 64
   cluster_algorithm: leiden
-  downsample_segments: True
-  minimum_segment_size: 16
+  graph_pool: True
+  minimum_segment_size: 0
+  n_conv_stem: 1
+  tau: 1
+  cat_input: False
+  use_kmeans: False
+  optimized: True
+  load_prototypes: False
+  # load_prototypes: data/placeholder/prototypes.pt
   # pretrained: vit_small_patch14_dinov2
 
 training:
-  lr: 0.00005
-  as_regression: True
+  lr: 0.0001
+  as_regression: False
   layer_decay: 0.95
 
   optimizer:
@@ -66,9 +74,14 @@ training:
 trainer:
   accumulate_grad_batches: 1
   accelerator: auto
-  max_epochs: 1
+  max_epochs: 20
   num_sanity_val_steps: 2
-  val_check_interval: 1.0
-  gradient_clip_val: 1.0
-  gradient_clip_algorithm: value
-  devices: [0, 1]
+  check_val_every_n_epoch: 1
+  # gradient_clip_val: 1.0
+  # gradient_clip_algorithm: norm
+  # devices: 1
+  # num_nodes: 1
+  strategy: deepspeed_stage_2
+
+  # strategy: ddp_find_unused_parameters_true
+  # detect_anomaly: True

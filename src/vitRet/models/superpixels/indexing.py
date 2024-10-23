@@ -22,6 +22,7 @@ def batch_index_from_segment(segment: Integer[Array, "B 1 H W"]) -> torch.Tensor
 
 
 def reindex_batch_segments(segments: Integer[Array, "B 1 H W"]):
+    return consecutive_reindex_batch_of_integers_tensor(segments)
     return torch.cat([torch.unique(s, return_inverse=True)[1].unsqueeze(0) for s in segments], 0)
 
 
@@ -93,7 +94,7 @@ def get_superpixels_batch_mask(segment: Integer[Array, "B N"]) -> torch.Tensor:
     N = segments_max.amax() + 1
     mask = torch.arange(0, N, device=segment.device).unsqueeze(0).expand(B, -1)
     mask = mask < segments_max.unsqueeze(1)
-    return mask
+    return mask.detach()
 
 
 def reconstruct_spatial_map_from_segment(x, segments, reindex=True):

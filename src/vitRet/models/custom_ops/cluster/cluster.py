@@ -20,7 +20,7 @@ def get_community_cluster(
     fill_diagonal=False,
     normalize_adj=False,
     algorithm="leiden",
-    remap_cluster: bool = True,
+    remap_cluster: bool = False,
     per_batch: bool = False,
 ):
     B = adj.shape[0]
